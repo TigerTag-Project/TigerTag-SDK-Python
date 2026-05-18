@@ -12,8 +12,9 @@ env/
 # DO NOT ignore database/*.json — they are bundled and committed.
 # sync_databases() updates them in place.
 
-# Test artifacts
+# Test artifacts — but keep committed fixtures
 *.bin
+!fixtures/*.bin
 *.nfc
 .pytest_cache/
 htmlcov/
