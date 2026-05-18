@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+env/
+.env
+*.egg
+
+# DO NOT ignore database/*.json — they are bundled and committed.
+# sync_databases() updates them in place.
+
+# Test artifacts
+*.bin
+*.nfc
+.pytest_cache/
+htmlcov/
+.coverage
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Internal tooling (not for public repo)
+.claude/
+CLAUDE.md
+claude.md

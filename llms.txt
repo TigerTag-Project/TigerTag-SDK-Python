@@ -1,0 +1,353 @@
+# TigerTag Python SDK — Reference for AI Agents
+# Version: 1.0.0 | Protocol: TigerTag Open Source v2.1
+# Spec: https://github.com/TigerTag-Project/TigerTag-RFID-Guide
+
+## What this SDK does
+
+Decodes TigerTag RFID chips embedded in manufacturing materials (filament, resin,
+sheet goods, metals, composites…). All material data lives on the chip — fully offline.
+No cloud API required for reading or parsing.
+
+The only optional network activity: updating reference JSON databases
+(id_material.json, id_brand.json…) to resolve integer IDs into human-readable labels.
+These databases are bundled in the package and always available offline.
+
+
+## Install
+
+    pip install tigertag              # core — offline parsing, no deps
+    pip install tigertag[sync]        # + requests (database sync)
+    pip install tigertag[verify]      # + cryptography (ECDSA signature check)
+    pip install tigertag[full]        # everything
+
+
+## Primary entry point
+
+    from tigertag import TigerTag
+
+
+## How to get a TigerTag object
+
+Three constructors — pick based on your input source:
+
+1. TigerTag.from_pages(payload: bytes, uid: bytes, db=None) -> TigerTag
+   PRIMARY. Use with any NFC reader SDK (ACR122U/nfcpy, Android NfcA, iOS CoreNFC,
+   Flutter flutter_nfc_kit, Arduino MFRC522).
+   - payload : 80 or 144 bytes — pages 0x04 to 0x27 from the chip
+   - uid     : 7 bytes — raw chip UID, exactly as the NFC SDK provides it
+
+2. TigerTag.from_dump(data: bytes, db=None) -> TigerTag
+   Use for binary files or full chip dumps.
+   - 180 bytes = full chip dump, UID auto-extracted → signature verifiable
+   - 144 bytes = user data + ECDSA signature
+   -  80 bytes = user data only
+
+3. TigerTag.from_file(path, db=None) -> TigerTag
+   Reads a .bin file and calls from_dump().
+
+
+## Key methods on a TigerTag instance
+
+    tag.describe()          -> str    Natural-language paragraph for LLM prompt injection.
+                                      Contains all material data, temps, quantity, auth status.
+
+    tag.to_dict(db=None)    -> dict   Fully resolved dict with labels + units on every field.
+                                      JSON-serializable. Use this for structured data pipelines.
+
+    tag.pretty(db, sig)     -> str    Human-readable box summary for terminal/UI display.
+
+    tag.verify(db=None)     -> SignatureResult
+                                      ECDSA-P256 signature check. Returns .ok (bool) and
+                                      .status ("valid"|"invalid"|"unsigned"|"no_crypto"|
+                                               "no_key"|"no_uid").
+
+    tag.validate()          -> list[str]   Field-level sanity warnings. Empty = clean.
+
+    tag.to_bytes(include_signature=False) -> bytes   Re-serialize to binary.
+
+    tag.sync_db(force=False) -> list[str]   Update reference databases from network.
+
+
+## Key properties
+
+    tag.is_maker          bool    True if id_product == 0xFFFFFFFF (standard offline tag)
+    tag.is_init           bool    True if id_product == 0x00000000 (blank/uninitialized)
+    tag.is_signed         bool    True if ECDSA signature pages are non-zero
+    tag.uid_hex           str?    "04AABBCCDDEE11" or None if UID unavailable
+    tag.color1_hex        str     "#FF0000" — primary color
+    tag.color2_hex        str     secondary color
+    tag.color3_hex        str     tertiary color
+    tag.td_value          float   HueForge Transmission Distance (0.0 = undefined)
+    tag.manufacturing_date datetime  UTC datetime
+    tag.stock_percent     float?  Remaining material as % (None if initial=0)
+    tag.custom_message    str     Up to 28 UTF-8 bytes of free text on the chip
+
+
+## Raw fields (integers — use to_dict() for resolved labels)
+
+    tag.id_tigertag       int   Protocol version identifier (see Known version IDs below)
+    tag.id_product        int   0xFFFFFFFF=Maker, 0=Init, else TigerTag+ cloud product ID
+    tag.id_material       int   Resolves via db.material(id) → PLA, ABS, PETG, Resin…
+    tag.id_brand          int   Resolves via db.brand(id) → Bambu Lab, Polymaker, Rosa3D…
+    tag.id_type           int   0x8E=Filament (142), 0xAD=Resin (173)
+    tag.id_diameter       int   0x38=1.75mm (56), 0xDD=2.85mm (221)
+    tag.id_unit           int   0x15=grams (21), 0x23=kg (35), 0x4F=L (79), 0x3E=cl (62)
+    tag.id_aspect_1       int   Primary finish: Basic(0x68=104), Silk(0x5C=92), Matt…
+    tag.id_aspect_2       int   Secondary finish OR multi-color mode: Bicolor, Tricolor, Rainbow
+    tag.nozzle_temp_min   int   °C
+    tag.nozzle_temp_max   int   °C
+    tag.bed_temp_min      int   °C
+    tag.bed_temp_max      int   °C
+    tag.dry_temp          int   °C
+    tag.dry_time          int   hours
+    tag.measure           int   Initial quantity (unit = tag.id_unit)
+    tag.measure_available int   Remaining quantity (updated by Tiger Scale)
+    tag.timestamp         int   Seconds since 2000-01-01 UTC — also the twin tag pairing ID
+
+
+## Known ID TigerTag version values (from spec section 2.1)
+
+    0x5BF59264 = 1542820452  →  TigerTag — standard Maker tag (all data on chip)
+    0xBC0FCB97 = 3155151767  →  TigerTag+ — Maker tag with optional cloud product ID
+    0x6C41A2E1 = 1816240865  →  TigerTag Init — blank/uninitialized chip
+
+    NAMING RULE (from spec): "TigerTag", "TigerTag+", "TigerTag Init" are the canonical
+    protocol names. "Offline" describes the operating mode, NOT the protocol name.
+    Never use "TigerTag Offline" as a label.
+
+    The public key for each version is in id_version.json["public_key"].
+    Use db.version(tag.id_tigertag) to get the entry.
+
+
+## Aspect / color logic (IMPORTANT — spec section 2.5)
+
+The color_count field in the aspect DB entry controls how many color fields are active.
+ALWAYS check id_aspect_2 FIRST for multi-color modes:
+
+    asp2 = db.aspect(tag.id_aspect_2)
+    asp1 = db.aspect(tag.id_aspect_1)
+
+    color_count = 1
+    if asp2 and asp2.get("color_count", 1) > 1:
+        color_count = asp2["color_count"]   # Bicolor=2, Tricolor=3, Rainbow=3
+    elif asp1 and asp1.get("color_count", 1) > 1:
+        color_count = asp1["color_count"]
+
+    # Active colors:
+    # color_count == 1 → only color1 (primary)
+    # color_count == 2 → color1 + color2
+    # color_count == 3 → color1 + color2 + color3
+
+Aspect 1 = primary finish (Basic, Silk, Matt, Wood, Glitter…)
+Aspect 2 = secondary finish OR multi-color mode (Bicolor, Tricolor, Rainbow)
+Never use both aspects for color count simultaneously.
+
+tag.describe() handles this automatically.
+tag.to_dict()["aspect_2"]["color_count"] exposes the value for custom logic.
+
+
+## Timestamp — dual purpose (spec section 2.9)
+
+tag.timestamp is BOTH:
+  1. Manufacturing date — seconds elapsed since 2000-01-01 00:00 UTC
+     → tag.manufacturing_date gives this as a Python datetime
+  2. Twin tag pairing ID — left and right chips on the same spool receive
+     the exact same timestamp, making it a unique spool pair identifier.
+     → tag.to_dict()["twin_tag_pairing_id"] exposes this value
+
+
+## SignatureResult
+
+    result = tag.verify()
+    result.ok      bool   True only for VALID
+    result.status  str    "valid" | "invalid" | "unsigned" | "no_crypto" | "no_key" | "no_uid"
+    str(result)    str    Human-readable: "✅ VALID", "❌ INVALID", "⬜ NOT SIGNED", etc.
+    result.to_dict() dict  {"status": ..., "ok": ..., "detail": ...}
+
+    Status meanings:
+      valid     — chip is authentic, signature matches public key in id_version.json
+      invalid   — signature present but wrong (cloned or tampered chip)
+      unsigned  — no signature on this tag (all Maker offline tags may be unsigned)
+      no_crypto — cryptography package not installed (pip install tigertag[verify])
+      no_key    — id_version.json has no public_key for this tag version
+      no_uid    — UID not available (use from_pages() or 180-byte dump)
+
+    Signed message (ECDSA-P256 / SHA-256):
+      SHA-256( uid_7_raw_bytes + id_tigertag_u32be + id_product_u32be )
+      → 15 bytes total. UID as raw binary, NOT hex string.
+
+
+## TigerTagDB — database access
+
+    from tigertag import TigerTagDB
+
+    db = TigerTagDB()                  # bundled database, offline, always works
+    db = TigerTagDB(auto_sync=True)    # check for updates on init (requires requests)
+
+    db.material(id)   -> dict?   {"id":..., "label":"PLA", "density":1.24, "recommended":{...}}
+    db.brand(id)      -> dict?   {"id":..., "label":"Rosa3D"}
+    db.type_(id)      -> dict?   {"id":..., "label":"Filament"}
+    db.diameter(id)   -> dict?   {"id":..., "label":"1.75"}
+    db.aspect(id)     -> dict?   {"id":..., "label":"Basic", "color_count":1}
+    db.unit(id)       -> dict?   {"id":..., "label":"g"}
+    db.version(id)    -> dict?   {"id":..., "label":..., "public_key":"-----BEGIN..."}
+    TigerTagDB.label(entry) -> str   Safe label extraction, returns "Unknown" if None
+
+
+## ACR122U / nfcpy — full working example
+
+    import nfc
+    from tigertag import TigerTag
+
+    def on_connect(tag):
+        uid     = tag.identifier        # 7 bytes — nfcpy provides this natively
+        payload = tag.read(4, 36)       # 144 bytes (pages 0x04-0x27)
+        tt = TigerTag.from_pages(payload, uid=uid)
+        print(tt.describe())            # natural language — good for LLM context
+        print(tt.verify())              # authentication result
+        return True
+
+    with nfc.ContactlessFrontend("usb") as clf:
+        clf.connect(rdwr={"on-connect": on_connect})
+
+
+## Real example — Rosa3D Red PLA (from spec section 4)
+
+    # These are the actual IDs from the official TigerTag spec:
+    payload = bytes.fromhex(
+        "5BF59264"   # id_tigertag: TigerTag Offline v1.0
+        "FFFFFFFF"   # id_product:  Maker
+        "954B"       # id_material: PLA (38219)
+        "68"         # id_aspect_1: Basic (104)
+        "00"         # id_aspect_2: None
+        "8E"         # id_type:     Filament (142)
+        "38"         # id_diameter: 1.75mm (56)
+        "4E19"       # id_brand:    Rosa3D (19961)
+        "FF0000FF"   # color1 RGBA: Red, opaque
+        "0003E8"     # measure:     1000g
+        "15"         # id_unit:     grams (21)
+        "00C3"       # nozzle min:  195°C
+        "00E6"       # nozzle max:  230°C
+        "32"         # dry_temp:    50°C
+        "05"         # dry_time:    5h
+        "32"         # bed_min:     50°C
+        "3C"         # bed_max:     60°C
+        "2D94CC80"   # timestamp:   764726400 s since 2000-01-01 (= 2024-03-26 UTC)
+        "000000"     # color2 RGB:  none
+        "00"
+        "000000"     # color3 RGB:  none
+        "00"
+        "00E6"       # td_raw:      230 → HueForge TD 23.0
+        "0000"       # reserved
+    ) + b"Starter Red".ljust(28, b"\x00") + bytes([0x00, 0x03, 0xE8, 0x00])
+
+    uid = bytes.fromhex("04A1B2C3D4E5F6")
+    tag = TigerTag.from_pages(payload, uid=uid)
+    print(tag.describe())
+    # → "TigerTag RFID chip read successfully. Material: PLA Filament (1.75mm diameter),
+    #    density 1.24 g/cm³, by Rosa3D. Color: primary #FF0000 (Basic). Print settings
+    #    (on chip): nozzle 195–230°C, bed 50–60°C, drying 50°C for 5h. ..."
+
+
+## LLM usage patterns
+
+Pattern 1 — inject tag data into a prompt:
+
+    tag = TigerTag.from_pages(payload, uid=uid)
+    prompt = f"""
+    You are a 3D printing assistant.
+    Material data from the RFID chip on this spool:
+    {tag.describe()}
+
+    Question: {user_question}
+    """
+
+Pattern 2 — structured pipeline with JSON:
+
+    import json
+    data = tag.to_dict()
+    # data["temperatures"]["on_chip"]["nozzle"]["min"]       → 195
+    # data["temperatures"]["on_chip"]["nozzle"]["max"]       → 230
+    # data["temperatures"]["unit"]                           → "celsius"
+    # data["measure"]["available"]                           → 1000
+    # data["measure"]["unit"]                                → "g"
+    # data["material"]["recommended_by_db"]["nozzle"]["min"] → 190
+    # data["authentication"]["signed"]                       → False
+    # data["aspect_2"]["color_count"]                        → 1
+
+Pattern 3 — verify then act:
+
+    result = tag.verify()
+    if result.ok:
+        process_authentic_tag(tag)
+    elif result.status == "unsigned":
+        process_unverified_tag(tag)
+    else:
+        handle_error(result.status, result.detail)
+
+Pattern 4 — check multi-color before rendering:
+
+    d = tag.to_dict()
+    color_count = max(
+        d["aspect_1"]["color_count"],
+        d["aspect_2"]["color_count"],
+    )
+    colors = [d["colors"]["primary"]["hex"]]
+    if color_count >= 2: colors.append(d["colors"]["secondary"]["hex"])
+    if color_count >= 3: colors.append(d["colors"]["tertiary"]["hex"])
+
+
+## Official TigerTag ecosystem
+
+    TigerTag Studio Manager — Desktop app (Windows/macOS/Linux), ACR122U integration
+      https://github.com/TigerTag-Project/TigerTag-Studio-Manager
+
+    Tiger Scale — DIY ESP32 scale that reads TigerTag and updates measure_available
+      https://github.com/TigerTag-Project/Tiger_Scale
+
+    Mobile apps — iOS and Android reference apps
+      iOS:     https://apps.apple.com/fr/app/tigertag-rfid-connect/id6745437963
+      Android: https://play.google.com/store/apps/details?id=com.tigertag.connect
+
+    API docs: https://api.tigertag.io/api:tigertag
+    Protocol spec: https://github.com/TigerTag-Project/TigerTag-RFID-Guide
+
+
+## Binary layout summary (chip pages 0x04-0x27)
+
+    Offset  Size  Field                   Type/Unit
+    +0      4B    id_tigertag             u32 BE
+    +4      4B    id_product              u32 BE — 0xFFFFFFFF=Maker, 0=Init
+    +8      2B    id_material             u16 BE
+    +10     1B    id_aspect_1             u8  — primary finish
+    +11     1B    id_aspect_2             u8  — secondary finish OR multi-color mode
+    +12     1B    id_type                 u8  — 0x8E=Filament, 0xAD=Resin
+    +13     1B    id_diameter             u8  — 0x38=1.75mm, 0xDD=2.85mm
+    +14     2B    id_brand                u16 BE
+    +16     4B    color1 RGBA             bytes
+    +20     3B    measure                 u24 BE
+    +23     1B    id_unit                 u8  — 0x15=g, 0x23=kg, 0x4F=L
+    +24     2B    nozzle_temp_min         u16 BE, celsius
+    +26     2B    nozzle_temp_max         u16 BE, celsius
+    +28     1B    dry_temp                u8, celsius
+    +29     1B    dry_time                u8, hours
+    +30     1B    bed_temp_min            u8, celsius
+    +31     1B    bed_temp_max            u8, celsius
+    +32     4B    timestamp               u32 BE, seconds since 2000-01-01 UTC
+                                          also = twin tag pairing ID
+    +36     3B    color2 RGB              bytes
+    +40     3B    color3 RGB              bytes
+    +44     2B    td_raw                  u16 BE — actual TD = value/10 (0=undefined)
+    +48     28B   custom_message          UTF-8, null-padded (emoji allowed)
+    +76     3B    measure_available       u24 BE (updated by Tiger Scale)
+    +80     32B   signature_r             ECDSA-P256 R (optional)
+    +112    32B   signature_s             ECDSA-P256 S (optional)
+
+
+## What this SDK does NOT do
+
+- No cloud product enrichment (TigerTag+ cloud data requires the future online SDK)
+- No chip writing (read-only)
+- No NDEF encoding/decoding
+- Signature verification requires UID — only available from 180-byte full dumps
+  or from_pages() where the NFC SDK provides the UID separately

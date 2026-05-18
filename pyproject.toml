@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tigertag"
+version = "1.0.0"
+description = "Offline Python SDK for TigerTag RFID material identification"
+readme = "README.md"
+license = {file = "LICENSE.md"}
+requires-python = ">=3.8"
+keywords = [
+    "tigertag", "rfid", "nfc", "materials", "manufacturing",
+    "ntag213", "identification", "3d-printing", "filament", "resin",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Manufacturing",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: System :: Hardware",
+]
+dependencies = []
+
+[project.optional-dependencies]
+sync   = ["requests>=2.28"]
+verify = ["cryptography>=41.0"]
+full   = ["requests>=2.28", "cryptography>=41.0"]
+
+[project.scripts]
+tigertag = "tigertag.cli:main"
+
+[project.urls]
+Homepage      = "https://tigertag.io"
+Repository    = "https://github.com/TigerTag-Project/tigertag-sdk-python"
+Documentation = "https://github.com/TigerTag-Project/TigerTag-RFID-Guide"
+"Bug Tracker" = "https://github.com/TigerTag-Project/tigertag-sdk-python/issues"
+
+[tool.setuptools.packages.find]
+where   = ["."]
+include = ["tigertag*"]
+
+[tool.setuptools.package-data]
+tigertag = ["database/*.json"]
