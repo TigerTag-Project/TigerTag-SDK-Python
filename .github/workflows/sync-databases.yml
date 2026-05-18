@@ -1,0 +1,49 @@
+name: Sync TigerTag Databases
+
+on:
+  schedule:
+    - cron: '0 3 * * *'   # every day at 03:00 UTC
+  workflow_dispatch:        # manual trigger from the Actions tab
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install SDK with sync dependencies
+        run: pip install -e ".[sync]"
+
+      - name: Sync databases from TigerTag API
+        run: |
+          python - <<'EOF'
+          from pathlib import Path
+          from tigertag.db import sync_databases
+
+          updated = sync_databases(Path("tigertag/database"), force=False, verbose=True)
+          if updated:
+              print(f"\n✓ Updated: {', '.join(updated)}")
+          else:
+              print("\n✓ All databases are up to date.")
+          EOF
+
+      - name: Commit and push if databases changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add tigertag/database/
+          if git diff --cached --quiet; then
+            echo "No changes — databases are already up to date."
+          else
+            git commit -m "chore: sync TigerTag reference databases [skip ci]"
+            git push
+          fi
