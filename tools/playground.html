@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TigerTag Playground</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --accent: #F97316;
+      --accent-dark: #C2591A;
+      --bg: #F1F5F9;
+      --card: #FFFFFF;
+      --border: #E2E8F0;
+      --text: #1E293B;
+      --muted: #64748B;
+      --ok: #16A34A;
+      --warn: #D97706;
+      --err: #DC2626;
+      --radius: 10px;
+      --shadow: 0 1px 4px rgba(0,0,0,.08);
+    }
+
+    body { font: 14px/1.5 system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); }
+
+    /* ── Layout ─────────────────────────────────────────────────────────────── */
+    #app { display: grid; grid-template-rows: auto 1fr; min-height: 100vh; }
+
+    header {
+      background: var(--text); color: #fff;
+      padding: 12px 20px; display: flex; align-items: center; gap: 12px;
+      position: sticky; top: 0; z-index: 10;
+    }
+    header h1 { font-size: 16px; font-weight: 700; letter-spacing: .3px; }
+    header .badge {
+      background: var(--accent); color: #fff; font-size: 10px; font-weight: 700;
+      padding: 2px 7px; border-radius: 20px; letter-spacing: .5px;
+    }
+    header .spacer { flex: 1; }
+    .hbtn {
+      background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.2);
+      color: #fff; padding: 6px 14px; border-radius: 6px; cursor: pointer;
+      font-size: 13px; font-weight: 500; transition: background .15s;
+    }
+    .hbtn:hover { background: rgba(255,255,255,.22); }
+    .hbtn.primary { background: var(--accent); border-color: var(--accent); }
+    .hbtn.primary:hover { background: var(--accent-dark); }
+
+    main {
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      gap: 0;
+      overflow: hidden;
+      height: calc(100vh - 48px);
+    }
+
+    /* ── Sidebar ─────────────────────────────────────────────────────────────── */
+    #sidebar {
+      overflow-y: auto; padding: 16px;
+      border-right: 1px solid var(--border);
+      background: var(--card);
+    }
+
+    /* ── Output ──────────────────────────────────────────────────────────────── */
+    #output {
+      overflow-y: auto; padding: 16px;
+      display: flex; flex-direction: column; gap: 14px;
+    }
+
+    /* ── Cards ───────────────────────────────────────────────────────────────── */
+    .card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden;
+    }
+    .card-head {
+      padding: 10px 14px; border-bottom: 1px solid var(--border);
+      font-size: 11px; font-weight: 700; letter-spacing: .8px;
+      text-transform: uppercase; color: var(--muted);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .card-body { padding: 14px; }
+
+    /* ── Presets ─────────────────────────────────────────────────────────────── */
+    .presets { margin-bottom: 14px; }
+    .presets-title {
+      font-size: 10px; font-weight: 700; letter-spacing: .8px;
+      text-transform: uppercase; color: var(--muted); margin-bottom: 8px;
+    }
+    .preset-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .preset-btn {
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 7px; padding: 8px 10px;
+      cursor: pointer; text-align: left; transition: border-color .15s, background .15s;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .preset-btn:hover { border-color: var(--accent); background: #FFF7ED; }
+    .preset-btn.active { border-color: var(--accent); background: #FFF7ED; }
+    .preset-swatch {
+      width: 20px; height: 20px; border-radius: 4px; flex-shrink: 0;
+      border: 1px solid rgba(0,0,0,.1);
+    }
+    .preset-info { min-width: 0; }
+    .preset-name { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .preset-sub  { font-size: 10px; color: var(--muted); }
+
+    /* ── Form ────────────────────────────────────────────────────────────────── */
+    .section-title {
+      font-size: 10px; font-weight: 700; letter-spacing: .8px;
+      text-transform: uppercase; color: var(--muted);
+      margin: 14px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border);
+    }
+    .field { margin-bottom: 10px; }
+    .field label { display: block; font-size: 12px; font-weight: 500; color: var(--muted); margin-bottom: 3px; }
+    .field input, .field select {
+      width: 100%; padding: 6px 9px; border: 1px solid var(--border);
+      border-radius: 6px; font-size: 13px; color: var(--text);
+      background: var(--bg); transition: border-color .15s;
+    }
+    .field input:focus, .field select:focus { outline: none; border-color: var(--accent); }
+    .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .color-preview { width: 28px; height: 28px; border-radius: 5px; border: 1px solid var(--border); flex-shrink: 0; }
+    .color-row { display: flex; align-items: center; gap: 6px; }
+    .color-row input[type=color] { width: 36px; height: 28px; padding: 1px; border-radius: 5px; cursor: pointer; }
+    .color-row input[type=range] { flex: 1; }
+    .color-row .alpha-label { font-size: 11px; color: var(--muted); min-width: 26px; text-align: right; }
+    .color-group { display: none; }
+    .color-group.visible { display: block; }
+
+    .generate-btn {
+      width: 100%; padding: 10px; background: var(--accent); color: #fff;
+      border: none; border-radius: 7px; font-size: 14px; font-weight: 700;
+      cursor: pointer; margin-top: 14px; transition: background .15s;
+    }
+    .generate-btn:hover { background: var(--accent-dark); }
+
+    /* ── Sig badge ───────────────────────────────────────────────────────────── */
+    .sig-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600;
+    }
+    .sig-badge.valid   { background: #DCFCE7; color: var(--ok); }
+    .sig-badge.invalid { background: #FEE2E2; color: var(--err); }
+    .sig-badge.unsigned{ background: #F1F5F9; color: var(--muted); }
+    .sig-badge.no_uid  { background: #FEF9C3; color: var(--warn); }
+
+    /* ── Tag table ───────────────────────────────────────────────────────────── */
+    .tag-table { width: 100%; border-collapse: collapse; }
+    .tag-table tr:not(:last-child) td { border-bottom: 1px solid var(--border); }
+    .tag-table td { padding: 7px 0; font-size: 13px; vertical-align: top; }
+    .tag-table td:first-child { color: var(--muted); width: 130px; padding-right: 12px; }
+    .tag-table td:last-child { font-weight: 500; }
+    .tag-group { font-size: 10px; font-weight: 700; letter-spacing: .7px; text-transform: uppercase; color: var(--accent); padding-top: 14px !important; }
+
+    .swatch-row { display: flex; align-items: center; gap: 6px; }
+    .swatch { width: 16px; height: 16px; border-radius: 3px; border: 1px solid rgba(0,0,0,.1); flex-shrink: 0; }
+
+    /* ── Describe ────────────────────────────────────────────────────────────── */
+    #describe-text { font-size: 13px; line-height: 1.7; color: var(--text); }
+
+    /* ── API card ────────────────────────────────────────────────────────────── */
+    .api-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .api-item { }
+    .api-item .k { font-size: 11px; color: var(--muted); }
+    .api-item .v { font-size: 13px; font-weight: 500; }
+    .api-loading { color: var(--muted); font-style: italic; font-size: 13px; }
+    .api-error   { color: var(--err); font-size: 13px; }
+
+    /* ── JSON ────────────────────────────────────────────────────────────────── */
+    #json-out {
+      font: 12px/1.6 monospace; white-space: pre-wrap; word-break: break-all;
+      background: #1E293B; color: #94A3B8; padding: 14px; border-radius: 8px;
+      max-height: 400px; overflow-y: auto;
+    }
+
+    /* ── Placeholder ─────────────────────────────────────────────────────────── */
+    #placeholder {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      height: 100%; color: var(--muted); gap: 10px; text-align: center;
+    }
+    #placeholder .icon { font-size: 48px; opacity: .3; }
+    #placeholder p { font-size: 14px; }
+
+    /* ── DB status ───────────────────────────────────────────────────────────── */
+    #db-status { font-size: 11px; color: var(--muted); text-align: center; padding: 4px 0 10px; }
+
+    input[type=file] { display: none; }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <div style="width:28px;height:28px;background:var(--accent);border-radius:6px;display:flex;align-items:center;justify-content:center;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+    </div>
+    <h1>TigerTag Playground</h1>
+    <span class="badge">SDK v1.0</span>
+    <div class="spacer"></div>
+    <button class="hbtn" onclick="document.getElementById('file-in').click()">⬆ Import .bin</button>
+    <button class="hbtn primary" id="export-btn" onclick="exportBin()" disabled>⬇ Export .bin</button>
+    <input type="file" id="file-in" accept=".bin" onchange="importBin(event)">
+  </header>
+
+  <main>
+    <!-- ── Sidebar form ──────────────────────────────────────────────────── -->
+    <div id="sidebar">
+      <div id="db-status">Loading databases…</div>
+
+      <!-- Presets -->
+      <div class="presets">
+        <div class="presets-title">TigerTag+ Demo Presets</div>
+        <div class="preset-grid" id="preset-grid"></div>
+      </div>
+
+      <!-- Protocol -->
+      <div class="section-title">Protocol</div>
+      <div class="field">
+        <label>Version</label>
+        <select id="f-version" onchange="onVersionChange()">
+          <option value="1545059940">TigerTag (0x5BF59264)</option>
+          <option value="3154968471">TigerTag+ (0xBC0FCB97)</option>
+          <option value="1816240865">TigerTag Init (0x6C41A2E1)</option>
+        </select>
+      </div>
+      <div class="field" id="product-id-row" style="display:none">
+        <label>Cloud Product ID (decimal)</label>
+        <input type="number" id="f-product-id" value="10" min="1" max="4294967294">
+      </div>
+
+      <!-- Material -->
+      <div class="section-title">Material</div>
+      <div class="field">
+        <label>Material</label>
+        <select id="f-material"></select>
+      </div>
+      <div class="field">
+        <label>Brand</label>
+        <select id="f-brand"></select>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Type</label>
+          <select id="f-type"></select>
+        </div>
+        <div class="field">
+          <label>Diameter</label>
+          <select id="f-diameter"></select>
+        </div>
+      </div>
+
+      <!-- Colors -->
+      <div class="section-title">Colors & Finish</div>
+      <div class="field-row">
+        <div class="field">
+          <label>Aspect 1 (finish)</label>
+          <select id="f-aspect1" onchange="updateColorGroups()"></select>
+        </div>
+        <div class="field">
+          <label>Aspect 2 (multi-color)</label>
+          <select id="f-aspect2" onchange="updateColorGroups()"></select>
+        </div>
+      </div>
+
+      <div id="color1-group" class="color-group visible">
+        <div class="field">
+          <label>Color 1 (primary)</label>
+          <div class="color-row">
+            <input type="color" id="f-color1" value="#ff0000" oninput="updatePreview('1')">
+            <span style="font-size:11px;color:var(--muted)">A:</span>
+            <input type="range" id="f-alpha1" min="0" max="255" value="255" oninput="updatePreview('1')">
+            <span class="alpha-label" id="alpha1-val">255</span>
+          </div>
+        </div>
+      </div>
+      <div id="color2-group" class="color-group">
+        <div class="field">
+          <label>Color 2 (secondary)</label>
+          <div class="color-row">
+            <input type="color" id="f-color2" value="#000000" oninput="updatePreview('2')">
+          </div>
+        </div>
+      </div>
+      <div id="color3-group" class="color-group">
+        <div class="field">
+          <label>Color 3 (tertiary)</label>
+          <div class="color-row">
+            <input type="color" id="f-color3" value="#000000" oninput="updatePreview('3')">
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>HueForge TD (0 = undefined)</label>
+        <input type="number" id="f-td" value="0" min="0" max="100" step="0.1">
+      </div>
+
+      <!-- Print settings -->
+      <div class="section-title">Print Settings</div>
+      <div class="field-row">
+        <div class="field"><label>Nozzle min (°C)</label><input type="number" id="f-nozzle-min" value="190" min="0" max="400"></div>
+        <div class="field"><label>Nozzle max (°C)</label><input type="number" id="f-nozzle-max" value="240" min="0" max="400"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Bed min (°C)</label><input type="number" id="f-bed-min" value="45" min="0" max="200"></div>
+        <div class="field"><label>Bed max (°C)</label><input type="number" id="f-bed-max" value="60" min="0" max="200"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Dry temp (°C)</label><input type="number" id="f-dry-temp" value="50" min="0" max="120"></div>
+        <div class="field"><label>Dry time (h)</label><input type="number" id="f-dry-time" value="6" min="0" max="72"></div>
+      </div>
+
+      <!-- Quantity -->
+      <div class="section-title">Quantity</div>
+      <div class="field-row">
+        <div class="field"><label>Initial quantity</label><input type="number" id="f-measure" value="1000" min="0"></div>
+        <div class="field">
+          <label>Unit</label>
+          <select id="f-unit"></select>
+        </div>
+      </div>
+      <div class="field"><label>Available (leave 0 = same as initial)</label><input type="number" id="f-avail" value="0" min="0"></div>
+
+      <!-- Metadata -->
+      <div class="section-title">Metadata</div>
+      <div class="field"><label>Manufacturing date</label><input type="date" id="f-date" value="2024-06-15"></div>
+      <div class="field"><label>Custom message (28 chars max)</label><input type="text" id="f-msg" value="" maxlength="28" placeholder="Optional free text"></div>
+      <div class="field"><label>Chip UID (hex, 14 chars — for sig verification &amp; API)</label><input type="text" id="f-uid" value="04A1B2C3D4E5F6" maxlength="14" placeholder="04AABBCCDDEEFF" pattern="[0-9A-Fa-f]{14}"></div>
+
+      <button class="generate-btn" onclick="generate()">▶ Generate &amp; Preview</button>
+    </div>
+
+    <!-- ── Output panel ──────────────────────────────────────────────────── -->
+    <div id="output">
+      <div id="placeholder">
+        <div class="icon">◈</div>
+        <p>Fill in the form and click <strong>Generate &amp; Preview</strong><br>or <strong>Import a .bin</strong> to parse an existing file.</p>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+// ── Constants ──────────────────────────────────────────────────────────────────
+
+const API   = 'https://api.tigertag.io/api:tigertag';
+const GHRAW = 'https://raw.githubusercontent.com/TigerTag-Project/TigerTag-RFID-Guide/main/database';
+const EPOCH_OFFSET = new Date('2000-01-01T00:00:00Z').getTime() / 1000;
+
+const ID_TIGERTAG      = 0x5BF59264;
+const ID_TIGERTAG_PLUS = 0xBC0FCB97;
+const ID_TIGERTAG_INIT = 0x6C41A2E1;
+
+const VERSION_LABELS = {
+  [ID_TIGERTAG]:      'TigerTag',
+  [ID_TIGERTAG_PLUS]: 'TigerTag+',
+  [ID_TIGERTAG_INIT]: 'TigerTag Init',
+};
+
+// ── Database ───────────────────────────────────────────────────────────────────
+
+const DB = { materials:[], brands:[], aspects:[], types:[], diameters:[], units:[], versions:[] };
+
+async function loadDB() {
+  const files = {
+    materials:'id_material.json', brands:'id_brand.json', aspects:'id_aspect.json',
+    types:'id_type.json', diameters:'id_diameter.json', units:'id_measure_unit.json',
+    versions:'id_version.json',
+  };
+  await Promise.all(Object.entries(files).map(async ([key, file]) => {
+    try {
+      const r = await fetch(`${GHRAW}/${file}`);
+      if (r.ok) DB[key] = await r.json();
+    } catch {}
+  }));
+  populateDropdowns();
+  document.getElementById('db-status').textContent = `${DB.materials.length} materials · ${DB.brands.length} brands loaded`;
+}
+
+function byId(table, id) { return DB[table].find(e => e.id === id) || null; }
+function lbl(e) { if (!e) return 'Unknown'; return e.label || e.name || 'Unknown'; }
+
+// ── Dropdowns ─────────────────────────────────────────────────────────────────
+
+function opt(val, text, selected=false) {
+  const o = document.createElement('option');
+  o.value = val; o.textContent = text; o.selected = selected;
+  return o;
+}
+
+function populateDropdowns() {
+  const mat = document.getElementById('f-material');
+  mat.innerHTML = '';
+  DB.materials.forEach(m => mat.appendChild(opt(m.id, `${m.label} (${m.id})`, m.id===38219)));
+
+  const brand = document.getElementById('f-brand');
+  brand.innerHTML = '';
+  DB.brands.forEach(b => brand.appendChild(opt(b.id, `${b.name||b.label} (${b.id})`, b.id===19961)));
+
+  const type = document.getElementById('f-type');
+  type.innerHTML = '';
+  DB.types.forEach(t => type.appendChild(opt(t.id, t.label, t.id===142)));
+
+  const diam = document.getElementById('f-diameter');
+  diam.innerHTML = '';
+  DB.diameters.forEach(d => diam.appendChild(opt(d.id, `${d.label} mm`, d.id===56)));
+
+  const asp1 = document.getElementById('f-aspect1');
+  asp1.innerHTML = '<option value="0">None</option>';
+  DB.aspects.forEach(a => asp1.appendChild(opt(a.id, `${a.label} (${a.id})`, a.id===104)));
+
+  const asp2 = document.getElementById('f-aspect2');
+  asp2.innerHTML = '<option value="0">None</option><option value="255">None / 0xFF</option>';
+  DB.aspects.forEach(a => asp2.appendChild(opt(a.id, `${a.label} (cc=${a.color_count||1})`)));
+
+  const unit = document.getElementById('f-unit');
+  unit.innerHTML = '';
+  DB.units.forEach(u => unit.appendChild(opt(u.id, u.label, u.id===21)));
+
+  updateColorGroups();
+}
+
+// ── Presets ────────────────────────────────────────────────────────────────────
+
+const PRESETS = [
+  { title:'Polyterra PLA',  brand:'Polymaker', productID:10, materialID:38219, aspect1ID:247, aspect2ID:255, typeID:142, diameterID:56, brandID:50604, colorR:137, colorG:217, colorB:217, colorA:255, weight:1000, unitId:21, tempMin:190, tempMax:240, bedMin:35, bedMax:65, dryTemp:45, dryTime:6 },
+  { title:'Elegoo TPU',     brand:'Elegoo',    productID:20, materialID:43518, aspect1ID:104, aspect2ID:255, typeID:142, diameterID:56, brandID:57632, colorR:0,   colorG:0,   colorB:0,   colorA:255, weight:1000, unitId:21, tempMin:200, tempMax:250, bedMin:30, bedMax:45, dryTemp:75, dryTime:8 },
+  { title:'R3D PLA HS',     brand:'R3D',       productID:30, materialID:24629, aspect1ID:104, aspect2ID:255, typeID:142, diameterID:56, brandID:48804, colorR:255, colorG:151, colorB:36,  colorA:255, weight:1000, unitId:21, tempMin:210, tempMax:240, bedMin:55, bedMax:65, dryTemp:55, dryTime:8 },
+  { title:'Sunlu PLA',      brand:'Sunlu',     productID:40, materialID:38219, aspect1ID:247, aspect2ID:255, typeID:142, diameterID:56, brandID:51857, colorR:41,  colorG:129, colorB:230, colorA:255, weight:1000, unitId:21, tempMin:190, tempMax:240, bedMin:50, bedMax:50, dryTemp:45, dryTime:6 },
+  { title:'eSun PLA+',      brand:'eSun',      productID:50, materialID:46591, aspect1ID:104, aspect2ID:255, typeID:142, diameterID:56, brandID:47930, colorR:0,   colorG:195, colorB:137, colorA:255, weight:1000, unitId:21, tempMin:210, tempMax:230, bedMin:45, bedMax:60, dryTemp:50, dryTime:8 },
+  { title:'Rosa3D PLA',     brand:'Rosa3D',    productID:60, materialID:38219, aspect1ID:92,  aspect2ID:24,  typeID:142, diameterID:56, brandID:19961, colorR:21,  colorG:50,  colorB:166, colorA:255, weight:1000, unitId:21, tempMin:195, tempMax:235, bedMin:40, bedMax:60, dryTemp:50, dryTime:4 },
+];
+
+function buildPresets() {
+  const grid = document.getElementById('preset-grid');
+  PRESETS.forEach((p, i) => {
+    const c = `rgb(${p.colorR},${p.colorG},${p.colorB})`;
+    const btn = document.createElement('button');
+    btn.className = 'preset-btn';
+    btn.dataset.idx = i;
+    btn.innerHTML = `
+      <div class="preset-swatch" style="background:${c}"></div>
+      <div class="preset-info">
+        <div class="preset-name">${p.title}</div>
+        <div class="preset-sub">TigerTag+ · ID ${p.productID}</div>
+      </div>`;
+    btn.onclick = () => applyPreset(i);
+    grid.appendChild(btn);
+  });
+}
+
+function applyPreset(idx) {
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.toggle('active', +b.dataset.idx === idx));
+  const p = PRESETS[idx];
+
+  document.getElementById('f-version').value = ID_TIGERTAG_PLUS;
+  onVersionChange();
+  document.getElementById('f-product-id').value = p.productID;
+
+  setSelect('f-material',  p.materialID);
+  setSelect('f-brand',     p.brandID);
+  setSelect('f-type',      p.typeID);
+  setSelect('f-diameter',  p.diameterID);
+  setSelect('f-aspect1',   p.aspect1ID);
+  setSelect('f-aspect2',   p.aspect2ID);
+
+  document.getElementById('f-color1').value = rgbToHex(p.colorR, p.colorG, p.colorB);
+  document.getElementById('f-alpha1').value = p.colorA;
+  document.getElementById('alpha1-val').textContent = p.colorA;
+
+  document.getElementById('f-nozzle-min').value = p.tempMin;
+  document.getElementById('f-nozzle-max').value = p.tempMax;
+  document.getElementById('f-bed-min').value    = p.bedMin;
+  document.getElementById('f-bed-max').value    = p.bedMax;
+  document.getElementById('f-dry-temp').value   = p.dryTemp;
+  document.getElementById('f-dry-time').value   = p.dryTime;
+  document.getElementById('f-measure').value    = p.weight;
+  setSelect('f-unit', p.unitId);
+  document.getElementById('f-avail').value = 0;
+  document.getElementById('f-msg').value   = '';
+
+  updateColorGroups();
+  generate();
+}
+
+function setSelect(id, val) {
+  const sel = document.getElementById(id);
+  for (const o of sel.options) if (+o.value === +val) { o.selected = true; return; }
+  // If not found, add a temporary option
+  const o = document.createElement('option');
+  o.value = val; o.textContent = `ID ${val}`; o.selected = true;
+  sel.appendChild(o);
+}
+
+// ── UI helpers ─────────────────────────────────────────────────────────────────
+
+function rgbToHex(r,g,b) { return '#' + [r,g,b].map(v=>v.toString(16).padStart(2,'0')).join(''); }
+function hexToRgb(hex) {
+  const m = hex.match(/^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+  return m ? [parseInt(m[1],16),parseInt(m[2],16),parseInt(m[3],16)] : [0,0,0];
+}
+
+function updatePreview(n) {
+  if (n==='1') document.getElementById('alpha1-val').textContent = document.getElementById('f-alpha1').value;
+}
+
+function onVersionChange() {
+  const v = +document.getElementById('f-version').value;
+  document.getElementById('product-id-row').style.display = (v === ID_TIGERTAG_PLUS) ? '' : 'none';
+}
+
+function getColorCount() {
+  const a2 = +document.getElementById('f-aspect2').value;
+  const a1 = +document.getElementById('f-aspect1').value;
+  const e2 = byId('aspects', a2);
+  const e1 = byId('aspects', a1);
+  if (e2 && (e2.color_count||1) > 1) return e2.color_count;
+  if (e1 && (e1.color_count||1) > 1) return e1.color_count;
+  return 1;
+}
+
+function updateColorGroups() {
+  const cc = getColorCount();
+  document.getElementById('color2-group').classList.toggle('visible', cc >= 2);
+  document.getElementById('color3-group').classList.toggle('visible', cc >= 3);
+}
+
+// ── Binary packing ─────────────────────────────────────────────────────────────
+
+function u32be(v) { return [(v>>>24)&0xFF,(v>>16)&0xFF,(v>>8)&0xFF,v&0xFF]; }
+function u24be(v) { return [(v>>16)&0xFF,(v>>8)&0xFF,v&0xFF]; }
+function u16be(v) { return [(v>>8)&0xFF,v&0xFF]; }
+function u8(v)    { return [v&0xFF]; }
+
+function buildPayload(f) {
+  const msgB = new TextEncoder().encode(f.custom||'');
+  const msgP = new Uint8Array(28); msgP.set(msgB.slice(0,28));
+  const avail = f.avail > 0 ? f.avail : f.measure;
+  return new Uint8Array([
+    ...u32be(f.id_tigertag), ...u32be(f.id_product),
+    ...u16be(f.id_material),
+    ...u8(f.id_aspect1), ...u8(f.id_aspect2),
+    ...u8(f.id_type), ...u8(f.id_diameter),
+    ...u16be(f.id_brand),
+    f.c1r, f.c1g, f.c1b, f.c1a,
+    ...u24be(f.measure), ...u8(f.id_unit),
+    ...u16be(f.nozzle_min), ...u16be(f.nozzle_max),
+    ...u8(f.dry_temp), ...u8(f.dry_time),
+    ...u8(f.bed_min), ...u8(f.bed_max),
+    ...u32be(f.timestamp),
+    f.c2r, f.c2g, f.c2b, 0,
+    f.c3r, f.c3g, f.c3b, 0,
+    ...u16be(f.td_raw), 0, 0,
+    ...msgP,
+    ...u24be(avail), 0,
+  ]);
+}
+
+// ── Binary parsing ─────────────────────────────────────────────────────────────
+
+function parseBuffer(buf) {
+  const all = new Uint8Array(buf);
+  let data, uid = null, sig_r = null, sig_s = null;
+
+  if (all.length === 180) {
+    uid  = Array.from([...all.slice(0,3), ...all.slice(4,8)]).map(b=>b.toString(16).padStart(2,'0').toUpperCase()).join('');
+    data = all.slice(16, 160);
+  } else {
+    data = all;
+  }
+
+  const dv = new DataView(data.buffer, data.byteOffset);
+  let p = 0;
+  const r32=()=>{ const v=dv.getUint32(p,false); p+=4; return v>>>0; };
+  const r16=()=>{ const v=dv.getUint16(p,false); p+=2; return v; };
+  const r8 =()=>{ const v=dv.getUint8(p); p+=1; return v; };
+  const r24=()=>{ const v=(dv.getUint8(p)<<16)|(dv.getUint8(p+1)<<8)|dv.getUint8(p+2); p+=3; return v; };
+
+  const f = {};
+  f.id_tigertag = r32(); f.id_product = r32();
+  f.id_material = r16();
+  f.id_aspect1  = r8();  f.id_aspect2 = r8();
+  f.id_type     = r8();  f.id_diameter = r8();
+  f.id_brand    = r16();
+  f.c1r=r8(); f.c1g=r8(); f.c1b=r8(); f.c1a=r8();
+  f.measure = r24(); f.id_unit = r8();
+  f.nozzle_min = r16(); f.nozzle_max = r16();
+  f.dry_temp = r8(); f.dry_time = r8();
+  f.bed_min = r8(); f.bed_max = r8();
+  f.timestamp = r32();
+  f.c2r=r8(); f.c2g=r8(); f.c2b=r8(); r8();
+  f.c3r=r8(); f.c3g=r8(); f.c3b=r8(); r8();
+  f.td_raw = r16(); r16();
+  const msgB = data.slice(p, p+28); p+=28;
+  f.custom = new TextDecoder().decode(msgB).replace(/\0.*$/,'');
+  f.avail = r24(); r8();
+
+  if (data.length >= 144) {
+    sig_r = data.slice(80, 112);
+    sig_s = data.slice(112, 144);
+    const allZero = [...sig_r,...sig_s].every(b=>b===0);
+    f.sig_r = allZero ? null : sig_r;
+    f.sig_s = allZero ? null : sig_s;
+  }
+  f.uid = uid;
+  return f;
+}
+
+// ── Signature verification (Web Crypto ECDSA-P256) ─────────────────────────────
+
+async function verifySig(f) {
+  if (!f.sig_r) return { status:'unsigned', label:'⬜ NOT SIGNED', cls:'unsigned' };
+  if (!f.uid)   return { status:'no_uid',   label:'⚠ UID REQUIRED', cls:'no_uid' };
+
+  const vEntry = byId('versions', f.id_tigertag);
+  if (!vEntry?.public_key) return { status:'no_key', label:'⚠ NO PUBLIC KEY', cls:'no_uid' };
+
+  try {
+    const pem = vEntry.public_key.replace(/-----[^-]+-----/g,'').replace(/\s/g,'');
+    const der = Uint8Array.from(atob(pem), c=>c.charCodeAt(0));
+    const key = await crypto.subtle.importKey('spki', der, {name:'ECDSA',namedCurve:'P-256'}, false, ['verify']);
+
+    const uidB = Uint8Array.from(f.uid.match(/.{2}/g).map(h=>parseInt(h,16)));
+    const msg  = new Uint8Array(15);
+    msg.set(uidB, 0);
+    new DataView(msg.buffer).setUint32(7, f.id_tigertag, false);
+    new DataView(msg.buffer).setUint32(11, f.id_product, false);
+
+    const sig = new Uint8Array(64);
+    sig.set(f.sig_r, 0); sig.set(f.sig_s, 32);
+
+    const ok = await crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'}, key, sig, msg);
+    return ok
+      ? { status:'valid',   label:'✅ VALID',   cls:'valid' }
+      : { status:'invalid', label:'❌ INVALID', cls:'invalid' };
+  } catch(e) {
+    return { status:'error', label:`⚠ ${e.message}`, cls:'no_uid' };
+  }
+}
+
+// ── TigerTag+ cloud data ───────────────────────────────────────────────────────
+
+async function fetchCloud(uid, productId) {
+  if (!productId || productId === 0xFFFFFFFF || productId === 0) return null;
+  const uidInt = uid ? BigInt('0x'+uid).toString() : '123456789';
+  const url = `${API}/product/get?uid=${uidInt}&product_id=${productId}`;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return { _error: `HTTP ${r.status}` };
+    return await r.json();
+  } catch(e) {
+    return { _error: e.message };
+  }
+}
+
+// ── Form → fields ──────────────────────────────────────────────────────────────
+
+function readForm() {
+  const version    = +document.getElementById('f-version').value >>> 0;
+  const productRaw = +document.getElementById('f-product-id').value;
+  const id_product = (version === ID_TIGERTAG_PLUS) ? productRaw
+                   : (version === ID_TIGERTAG_INIT) ? 0x00000000
+                   : 0xFFFFFFFF;
+
+  const [c1r,c1g,c1b] = hexToRgb(document.getElementById('f-color1').value);
+  const [c2r,c2g,c2b] = hexToRgb(document.getElementById('f-color2').value);
+  const [c3r,c3g,c3b] = hexToRgb(document.getElementById('f-color3').value);
+  const c1a = +document.getElementById('f-alpha1').value;
+
+  const dateStr = document.getElementById('f-date').value;
+  const ts = dateStr ? Math.floor(new Date(dateStr+'T00:00:00Z').getTime()/1000 - EPOCH_OFFSET) : 0;
+
+  const tdVal = +document.getElementById('f-td').value;
+
+  return {
+    id_tigertag: version, id_product,
+    id_material: +document.getElementById('f-material').value,
+    id_aspect1:  +document.getElementById('f-aspect1').value,
+    id_aspect2:  +document.getElementById('f-aspect2').value,
+    id_type:     +document.getElementById('f-type').value,
+    id_diameter: +document.getElementById('f-diameter').value,
+    id_brand:    +document.getElementById('f-brand').value,
+    c1r,c1g,c1b,c1a, c2r,c2g,c2b, c3r,c3g,c3b,
+    measure:     +document.getElementById('f-measure').value,
+    id_unit:     +document.getElementById('f-unit').value,
+    nozzle_min:  +document.getElementById('f-nozzle-min').value,
+    nozzle_max:  +document.getElementById('f-nozzle-max').value,
+    dry_temp:    +document.getElementById('f-dry-temp').value,
+    dry_time:    +document.getElementById('f-dry-time').value,
+    bed_min:     +document.getElementById('f-bed-min').value,
+    bed_max:     +document.getElementById('f-bed-max').value,
+    timestamp:   ts >>> 0,
+    td_raw:      Math.round(tdVal * 10),
+    custom:      document.getElementById('f-msg').value,
+    avail:       +document.getElementById('f-avail').value,
+    uid:         document.getElementById('f-uid').value.toUpperCase().replace(/[^0-9A-F]/g,'') || null,
+  };
+}
+
+// ── Rendering ──────────────────────────────────────────────────────────────────
+
+let _lastPayload = null;
+
+async function generate() {
+  const f = readForm();
+  const payload = buildPayload(f);
+  _lastPayload = payload;
+  document.getElementById('export-btn').disabled = false;
+  await renderOutput(f, payload);
+}
+
+async function renderOutput(f, payload) {
+  const out = document.getElementById('output');
+  out.innerHTML = '';
+
+  const sigResult = await verifySig(f);
+
+  // ── Tag summary card ──
+  const matE  = byId('materials', f.id_material);
+  const brandE= byId('brands',    f.id_brand);
+  const typeE = byId('types',     f.id_type);
+  const diamE = byId('diameters', f.id_diameter);
+  const asp1E = byId('aspects',   f.id_aspect1);
+  const asp2E = byId('aspects',   f.id_aspect2);
+  const unitE = byId('units',     f.id_unit);
+  const verLabel = VERSION_LABELS[f.id_tigertag] || `0x${(f.id_tigertag>>>0).toString(16).toUpperCase()}`;
+
+  const isMaker = f.id_product === 0xFFFFFFFF;
+  const isInit  = f.id_product === 0x00000000;
+  const isPlus  = f.id_tigertag === ID_TIGERTAG_PLUS && !isMaker && !isInit;
+
+  const colorCount = (() => {
+    const e2 = asp2E; const e1 = asp1E;
+    if (e2 && (e2.color_count||1) > 1) return e2.color_count;
+    if (e1 && (e1.color_count||1) > 1) return e1.color_count;
+    return 1;
+  })();
+
+  const c1hex = rgbToHex(f.c1r, f.c1g, f.c1b);
+  const c2hex = rgbToHex(f.c2r, f.c2g, f.c2b);
+  const c3hex = rgbToHex(f.c3r, f.c3g, f.c3b);
+
+  const mfgDate = (() => {
+    const ms = (EPOCH_OFFSET + f.timestamp) * 1000;
+    return new Date(ms).toISOString().split('T')[0];
+  })();
+
+  const stockPct = f.avail > 0 && f.measure > 0 ? (f.avail / f.measure * 100).toFixed(1) + '%' : '100%';
+  const availDisp = f.avail > 0 ? f.avail : f.measure;
+  const tdDisp = f.td_raw > 0 ? (f.td_raw / 10).toFixed(1) : 'undefined';
+
+  const swatchRow = (hex, alpha) => `<div class="swatch-row">
+    <div class="swatch" style="background:${hex};opacity:${alpha/255}"></div>
+    <span>${hex}</span>${alpha<255?` <span style="color:var(--muted)">α=${alpha}</span>`:''}
+  </div>`;
+
+  function row(k, v)  { return `<tr><td>${k}</td><td>${v}</td></tr>`; }
+  function grp(label) { return `<tr><td colspan="2" class="tag-group">${label}</td></tr>`; }
+
+  const summaryHTML = `
+    <table class="tag-table">
+      ${grp('Protocol')}
+      ${row('Version', verLabel + ` <span style="color:var(--muted);font-weight:400">(0x${(f.id_tigertag>>>0).toString(16).toUpperCase()})</span>`)}
+      ${row('Product', isMaker ? 'TigerTag Maker' : isInit ? 'TigerTag Init' : `TigerTag+ · cloud ID <strong>${f.id_product}</strong>`)}
+      ${row('UID', f.uid ? `<code>${f.uid}</code>` : '<em style="color:var(--muted)">not set (80B dump)</em>')}
+      ${grp('Material')}
+      ${row('Material', `${lbl(matE)} <span style="color:var(--muted)">(id=${f.id_material})</span>`)}
+      ${row('Brand',    `${lbl(brandE)} <span style="color:var(--muted)">(id=${f.id_brand})</span>`)}
+      ${row('Type',     lbl(typeE))}
+      ${row('Diameter', diamE ? diamE.label+' mm' : `id=${f.id_diameter}`)}
+      ${grp('Colors')}
+      ${row('Aspect 1', lbl(asp1E))}
+      ${row('Aspect 2', lbl(asp2E))}
+      ${row('Color count', colorCount)}
+      ${row('Color 1', swatchRow(c1hex, f.c1a))}
+      ${colorCount>=2 ? row('Color 2', swatchRow(c2hex, 255)) : ''}
+      ${colorCount>=3 ? row('Color 3', swatchRow(c3hex, 255)) : ''}
+      ${row('HueForge TD', tdDisp)}
+      ${grp('Print Settings')}
+      ${row('Nozzle',    `${f.nozzle_min}–${f.nozzle_max} °C`)}
+      ${row('Bed',       `${f.bed_min}–${f.bed_max} °C`)}
+      ${row('Drying',    `${f.dry_temp}°C / ${f.dry_time}h`)}
+      ${grp('Quantity')}
+      ${row('Unit',      lbl(unitE))}
+      ${row('Initial',   `${f.measure} ${lbl(unitE)}`)}
+      ${row('Available', `${availDisp} ${lbl(unitE)} (${stockPct})`)}
+      ${grp('Metadata')}
+      ${row('Manufactured', mfgDate)}
+      ${row('Twin tag ID',  f.timestamp)}
+      ${f.custom ? row('Message', `<em>"${esc(f.custom)}"</em>`) : ''}
+      ${grp('Signature')}
+      ${row('Status', `<span class="sig-badge ${sigResult.cls}">${sigResult.label}</span>`)}
+      ${row('Dump size', `${payload.length}B`)}
+    </table>`;
+
+  addCard(out, 'Tag Summary', summaryHTML);
+
+  // ── Describe card ──
+  const colorDesc = (() => {
+    const parts = [`primary ${c1hex} (${lbl(asp1E)})`];
+    if (colorCount>=2) parts.push(`secondary ${c2hex}`);
+    if (colorCount>=3) parts.push(`tertiary ${c3hex}`);
+    return parts.join(', ');
+  })();
+  const asp2desc = asp2E && asp2E.id !== f.id_aspect1 ? ` · ${lbl(asp2E)}` : '';
+  const density = matE?.density ? ` density ${matE.density} g/cm³,` : '';
+
+  const descText = `${verLabel} RFID chip. ` +
+    `Material: ${lbl(matE)} ${lbl(typeE)}` +
+    (diamE ? ` (${diamE.label}mm diameter),` : ',') +
+    `${density} by ${lbl(brandE)}. ` +
+    `Color: ${colorDesc}${asp2desc}. ` +
+    `Print settings (on chip): nozzle ${f.nozzle_min}–${f.nozzle_max}°C, bed ${f.bed_min}–${f.bed_max}°C, drying ${f.dry_temp}°C for ${f.dry_time}h. ` +
+    `Quantity: ${availDisp} ${lbl(unitE)} remaining out of ${f.measure} ${lbl(unitE)} initial (${stockPct}). ` +
+    (f.td_raw > 0 ? `HueForge TD: ${tdDisp}. ` : '') +
+    `Manufactured: ${mfgDate}. ` +
+    (f.custom ? `Custom message on chip: "${f.custom}". ` : '') +
+    (f.uid ? `Chip UID: ${f.uid}. ` : '') +
+    `Signature: ${sigResult.status}.`;
+
+  addCard(out, 'describe() — Natural Language for LLM', `<div id="describe-text">${esc(descText)}</div>`);
+
+  // ── Cloud data card (TigerTag+) ──
+  if (isPlus) {
+    const apiDiv = document.createElement('div');
+    apiDiv.className = 'card';
+    apiDiv.innerHTML = `<div class="card-head">☁ TigerTag+ Cloud Data · product_id=${f.id_product}</div>
+      <div class="card-body"><div class="api-loading">Fetching from api.tigertag.io…</div></div>`;
+    out.appendChild(apiDiv);
+
+    fetchCloud(f.uid, f.id_product).then(data => {
+      const body = apiDiv.querySelector('.card-body');
+      if (!data) { body.innerHTML = '<div class="api-loading">N/A (Maker tag)</div>'; return; }
+      if (data._error) { body.innerHTML = `<div class="api-error">⚠ ${esc(data._error)}</div>`; return; }
+      body.innerHTML = renderCloudData(data);
+    });
+  }
+
+  // ── JSON card ──
+  const jsonObj = {
+    protocol: { version: verLabel, id_tigertag: '0x'+f.id_tigertag.toString(16).toUpperCase(), id_product: f.id_product },
+    material: { id: f.id_material, label: lbl(matE), density: matE?.density||null },
+    brand:    { id: f.id_brand,    label: lbl(brandE) },
+    type:     { id: f.id_type,     label: lbl(typeE) },
+    diameter: { id: f.id_diameter, label: diamE?.label||'?' },
+    aspect_1: { id: f.id_aspect1, label: lbl(asp1E), color_count: asp1E?.color_count||1 },
+    aspect_2: { id: f.id_aspect2, label: lbl(asp2E), color_count: asp2E?.color_count||1 },
+    colors:   { primary:{ hex:c1hex, alpha:f.c1a }, secondary:{ hex:c2hex }, tertiary:{ hex:c3hex }, active_count: colorCount },
+    temperatures: { nozzle:{min:f.nozzle_min,max:f.nozzle_max}, bed:{min:f.bed_min,max:f.bed_max}, dry:{temp:f.dry_temp,time:f.dry_time} },
+    measure: { initial:f.measure, available:availDisp, unit:lbl(unitE), stock_pct:parseFloat(stockPct) },
+    td: { raw:f.td_raw, value: f.td_raw > 0 ? f.td_raw/10 : null },
+    traceability: { manufacturing_date:mfgDate, twin_tag_pairing_id:f.timestamp, custom_message:f.custom||null, uid:f.uid },
+    authentication: { signed: !!f.sig_r, status: sigResult.status },
+    sdk_mode: 'offline',
+  };
+  addCard(out, 'to_dict() — JSON', `<pre id="json-out">${JSON.stringify(jsonObj, null, 2)}</pre>`);
+}
+
+function renderCloudData(data) {
+  const skip = new Set(['_error']);
+  const items = Object.entries(data)
+    .filter(([k]) => !skip.has(k))
+    .map(([k, v]) => {
+      const val = typeof v === 'object' ? JSON.stringify(v) : String(v);
+      return `<div class="api-item"><div class="k">${esc(k)}</div><div class="v">${esc(val.length>120?val.slice(0,120)+'…':val)}</div></div>`;
+    }).join('');
+  return `<div class="api-grid">${items}</div>
+    <details style="margin-top:12px">
+      <summary style="cursor:pointer;font-size:12px;color:var(--muted)">Raw JSON</summary>
+      <pre style="font:11px/1.5 monospace;margin-top:8px;background:var(--bg);padding:10px;border-radius:6px;overflow:auto;max-height:200px">${esc(JSON.stringify(data, null, 2))}</pre>
+    </details>`;
+}
+
+function addCard(parent, title, bodyHTML) {
+  const el = document.createElement('div');
+  el.className = 'card';
+  el.innerHTML = `<div class="card-head">${title}</div><div class="card-body">${bodyHTML}</div>`;
+  parent.appendChild(el);
+}
+
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// ── Import ─────────────────────────────────────────────────────────────────────
+
+function importBin(evt) {
+  const file = evt.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async e => {
+    const f = parseBuffer(e.target.result);
+    _lastPayload = new Uint8Array(e.target.result);
+    document.getElementById('export-btn').disabled = false;
+
+    // Populate form from parsed fields
+    setSelect('f-version',  f.id_tigertag);
+    onVersionChange();
+    document.getElementById('f-product-id').value = f.id_product;
+    setSelect('f-material', f.id_material);
+    setSelect('f-brand',    f.id_brand);
+    setSelect('f-type',     f.id_type);
+    setSelect('f-diameter', f.id_diameter);
+    setSelect('f-aspect1',  f.id_aspect1);
+    setSelect('f-aspect2',  f.id_aspect2);
+    document.getElementById('f-color1').value = rgbToHex(f.c1r,f.c1g,f.c1b);
+    document.getElementById('f-alpha1').value = f.c1a;
+    document.getElementById('alpha1-val').textContent = f.c1a;
+    document.getElementById('f-color2').value = rgbToHex(f.c2r,f.c2g,f.c2b);
+    document.getElementById('f-color3').value = rgbToHex(f.c3r,f.c3g,f.c3b);
+    document.getElementById('f-td').value = f.td_raw > 0 ? (f.td_raw/10).toFixed(1) : 0;
+    document.getElementById('f-nozzle-min').value = f.nozzle_min;
+    document.getElementById('f-nozzle-max').value = f.nozzle_max;
+    document.getElementById('f-bed-min').value    = f.bed_min;
+    document.getElementById('f-bed-max').value    = f.bed_max;
+    document.getElementById('f-dry-temp').value   = f.dry_temp;
+    document.getElementById('f-dry-time').value   = f.dry_time;
+    document.getElementById('f-measure').value    = f.measure;
+    setSelect('f-unit', f.id_unit);
+    document.getElementById('f-avail').value  = f.avail !== f.measure ? f.avail : 0;
+    document.getElementById('f-msg').value    = f.custom;
+    if (f.uid) document.getElementById('f-uid').value = f.uid;
+
+    const ts = (EPOCH_OFFSET + f.timestamp) * 1000;
+    document.getElementById('f-date').value = new Date(ts).toISOString().split('T')[0];
+
+    updateColorGroups();
+    await renderOutput(f, _lastPayload);
+    evt.target.value = '';
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ── Export ─────────────────────────────────────────────────────────────────────
+
+function exportBin() {
+  if (!_lastPayload) return;
+  const blob = new Blob([_lastPayload], { type:'application/octet-stream' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `tigertag_${Date.now()}.bin`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+
+buildPresets();
+loadDB();
+  </script>
+</body>
+</html>
