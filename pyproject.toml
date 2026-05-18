@@ -39,9 +39,9 @@ tigertag = "tigertag.cli:main"
 
 [project.urls]
 Homepage      = "https://tigertag.io"
-Repository    = "https://github.com/TigerTag-Project/tigertag-sdk-python"
+Repository    = "https://github.com/TigerTag-Project/TigerTag-SDK-Python"
 Documentation = "https://github.com/TigerTag-Project/TigerTag-RFID-Guide"
-"Bug Tracker" = "https://github.com/TigerTag-Project/tigertag-sdk-python/issues"
+"Bug Tracker" = "https://github.com/TigerTag-Project/TigerTag-SDK-Python/issues"
 
 [tool.setuptools.packages.find]
 where   = ["."]
