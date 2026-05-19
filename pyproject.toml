@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tigertag"
-version = "1.0.0"
+version = "1.1.0"
 description = "Offline Python SDK for TigerTag RFID material identification"
 readme = "README.md"
 license = {file = "LICENSE.md"}
