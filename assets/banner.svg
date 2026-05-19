@@ -77,10 +77,8 @@
 
   <!-- Main title -->
   <text x="200" y="118" font-family="system-ui,-apple-system,'Segoe UI',sans-serif"
-        font-size="58" font-weight="800" fill="#ffffff" letter-spacing="-1">TigerTag</text>
-  <text x="200" y="118" font-family="system-ui,-apple-system,'Segoe UI',sans-serif"
         font-size="58" font-weight="800" letter-spacing="-1">
-    <tspan fill="url(#accent)"> Python SDK</tspan>
+    <tspan fill="#ffffff">TigerTag</tspan><tspan fill="url(#accent)"> Python SDK</tspan>
   </text>
 
   <!-- Tagline -->
