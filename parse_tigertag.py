@@ -14,62 +14,56 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 """
-parse_tigertag.py — TigerTag NTAG213 Offline SDK  (v1.0)
-=========================================================
-Single-file, self-contained SDK for reading TigerTag RFID chips.
+parse_tigertag.py — TigerTag Python SDK  (v1.1)
+================================================
+Single-file, self-contained SDK for reading, writing, and syncing TigerTag RFID chips.
 
 Spec    : https://github.com/TigerTag-Project/TigerTag-RFID-Guide
 SDK repo: https://github.com/TigerTag-Project/tigertag-sdk-python
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SCOPE — 100% OFFLINE MODE
+SCOPE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  This SDK operates in pure offline mode: all filament data
-  (temperatures, material, brand, colors…) is read directly from the
-  NTAG213 chip. No API call is made to enrich or validate filament data.
+  All material data (temperatures, material, brand, colors…) is stored directly
+  on the chip. No API call is required to read a tag.
 
-  The only network activity is the optional download of reference JSON
-  databases (id_material.json, id_brand.json…). These databases are
-  used solely to resolve integer IDs into human-readable labels. They
-  are cached locally and never queried during normal tag reads.
+  TigerTag+ chips carry a cloud product ID (id_product ≠ 0xFFFFFFFF).
+  This SDK reads all chip fields identically for every tag type.
+  Use diff_api() / patch_from_api() to compare chip data against the
+  TigerTag+ cloud API and apply manufacturer updates.
 
-  ┌──────────────────────────────────────────────────────────────────┐
-  │  TigerTag type    │  This SDK (Offline)     │  Future Online SDK │
-  ├───────────────────┼─────────────────────────┼────────────────────┤
-  │  TigerTag (Maker) │  ✅ full support         │  ✅ full support    │
-  │  TigerTag Init    │  ✅ full support         │  ✅ full support    │
-  │  TigerTag+        │  ✅ full support         │  ✅ chip + cloud    │
-  │                   │  (identical to Maker)   │  (product API)     │
-  └───────────────────┴─────────────────────────┴────────────────────┘
-
-  TigerTag+ tags carry a cloud product ID (id_product ≠ 0xFFFFFFFF)
-  alongside all standard filament data. This SDK reads all chip data
-  identically for every tag type — there is no functional difference
-  between TigerTag Maker and TigerTag+ in offline mode. The cloud
-  product ID is exposed in to_dict() as product.id so callers can
-  optionally query the TigerTag API themselves if needed.
-  The Online SDK (coming later) will add that enrichment automatically:
-    GET /product/get?uid={UID}&product_id={id_product}
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │  TigerTag type    │  Read         │  Write        │  Cloud sync     │
+  ├───────────────────┼───────────────┼───────────────┼─────────────────┤
+  │  TigerTag (Maker) │  ✅ full      │  ✅ create()  │  —              │
+  │  TigerTag Init    │  ✅ full      │  ✅ as_init() │  —              │
+  │  TigerTag+        │  ✅ full      │  ✅ create()  │  ✅ diff_api()  │
+  └───────────────────┴───────────────┴───────────────┴─────────────────┘
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 QUICK START
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  # 1. Install dependencies (see DEPENDENCIES section below)
-  pip install requests cryptography
-
-  # 2. Parse a tag (databases auto-downloaded on first run)
-  python parse_tigertag.py dump.bin
-
-  # 3. Use as a library in your project
+  # Parse a tag from binary dump
   from parse_tigertag import TigerTag
 
   tag = TigerTag.from_dump(open("dump.bin", "rb").read())
-  tag.sync_db()           # download/update reference databases (optional)
-  print(tag.pretty())     # human-readable output
-  print(tag.to_dict())    # dict for JSON serialization or API response
-  print(tag.verify())     # ECDSA signature verification
+  tag.sync_db()                    # download/update reference databases (optional)
+  print(tag.pretty())              # human-readable output
+  print(tag.to_dict())             # dict for JSON / API
+  print(tag.verify())              # ECDSA signature verification
+
+  # Create a new tag from scratch
+  tag = TigerTag.create(id_material=38219, nozzle_temp_min=190, nozzle_temp_max=230)
+  chip.write_pages(4, tag.to_bytes())
+
+  # Surgical update (immutable — returns a new TigerTag)
+  updated = tag.patch(dry_temp=55, nozzle_temp_max=240)
+
+  # TigerTag+ cloud sync
+  diffs = tag.diff_api()
+  new_tag, applied = tag.patch_from_api()
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 DEPENDENCIES
@@ -78,25 +72,19 @@ DEPENDENCIES
   REQUIRED — core parsing (Python stdlib, no install needed):
     struct, json, os, sys, pathlib, dataclasses, datetime, typing
 
-  REQUIRED for database sync (auto-download reference JSON files):
+  OPTIONAL for database sync (auto-download reference JSON files):
     pip install requests
-    → https://docs.python-requests.org
     → Without this, databases must be present locally before use.
 
   OPTIONAL for ECDSA signature verification:
     pip install cryptography
-    → https://cryptography.io/en/latest/installation/
     → Without this, verify() returns SignatureResult.NO_CRYPTO.
 
   Install everything at once:
     pip install requests cryptography
 
-  Embedded / MicroPython environments:
-    pip install micropython-urequests   # drop-in replacement for requests
-    (ECDSA signature verification not available without cryptography)
-
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-BINARY LAYOUT — NTAG213 (pages 0x04-0x27, 144 bytes)
+BINARY LAYOUT — pages 0x04-0x27 (144 bytes)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   Page      Offset  Size  Field                   Type
@@ -131,7 +119,7 @@ BINARY LAYOUT — NTAG213 (pages 0x04-0x27, 144 bytes)
   0x18-0x1F +80     32B   Signature R (ECDSA)     bytes   optional
   0x20-0x27 +112    32B   Signature S (ECDSA)     bytes   optional
 
-  Capacity : 80B user data + 64B signature = 144B = full NTAG213 user memory
+  Capacity : 80B user data + 64B signature = 144B = full user memory
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 SIGNATURE ALGORITHM
@@ -147,9 +135,7 @@ SIGNATURE ALGORITHM
     block4    = page 0x04 bytes 0-3  (ID TigerTag, u32 BE)
     block5    = page 0x05 bytes 4-7  (ID Product,  u32 BE)
 
-  The UID is used as raw binary bytes per ISO 14443 / NFC standard.
-  The public key is stored in id_version.json ("public_key" field) and
-  resolved automatically from the chip's id_tigertag value.
+  The public key is stored in id_version.json ("public_key" field).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ACCEPTED DUMP FORMATS
@@ -169,10 +155,10 @@ import json
 import os
 import struct
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields as _dc_fields, replace as _dc_replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Optional: requests  (pip install requests)
@@ -219,7 +205,7 @@ _DATASETS: Dict[str, tuple] = {
     "measure_units":      ("measure_unit/get/all",      "id_measure_unit.json"),
 }
 
-# NTAG213 memory layout
+# NTAG-compatible memory layout
 CHIP_DUMP_LEN = 180   # full chip: 45 pages × 4B (pages 0-44)
 FULL_DATA_LEN = 144   # user data + signature (pages 0x04-0x27)
 MIN_DATA_LEN  = 80    # user data only        (pages 0x04-0x17)
@@ -230,6 +216,19 @@ _TIGERTAG_EPOCH = datetime(2000, 1, 1, tzinfo=timezone.utc)
 # Product ID sentinel values
 MAKER_PRODUCT_ID = 0xFFFFFFFF  # offline Maker tag
 INIT_PRODUCT_ID  = 0x00000000  # blank / uninitialized tag
+
+# Protocol version identifiers (id_tigertag field)
+ID_TIGERTAG      = 0x5BF59264  # TigerTag v1.0 (Maker / offline)
+ID_TIGERTAG_PLUS = 0xBC0FCB97  # TigerTag+ v1.0 (cloud product)
+ID_TIGERTAG_INIT = 0x6C41A2E1  # TigerTag Init (reserved, not yet programmed)
+
+_PRODUCT_PAGE_BASE = "https://tigertag.io/pages/product-infos"
+_API_PRODUCT_BASE  = "https://api.tigertag.io/api:tigertag/product/get"
+
+# Fields covered by the ECDSA signature — must never be modified after signing.
+_PROTECTED_FIELDS: frozenset = frozenset({
+    "id_tigertag", "id_product", "uid", "signature_r", "signature_s", "_db",
+})
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -407,7 +406,6 @@ class TigerTagDB:
         if not missing_still:
             return
 
-        sync_cmd = f'python "{Path(__file__).parent / "Sample code" / "sync_id_database_api_or_github.py"}"'
         print("", file=sys.stderr)
         print("❌  TigerTag database files not found.", file=sys.stderr)
         print(f"    Expected folder: {self._path.resolve()}", file=sys.stderr)
@@ -420,8 +418,7 @@ class TigerTagDB:
             print("    ⚠️  'requests' is not installed — cannot auto-download.", file=sys.stderr)
             print("    Install it first:  pip install requests", file=sys.stderr)
             print("", file=sys.stderr)
-        print("    ➜  Manual download:", file=sys.stderr)
-        print(f"       {sync_cmd}", file=sys.stderr)
+        print("    ➜  Run:  python parse_tigertag.py --sync-only", file=sys.stderr)
         print("", file=sys.stderr)
         sys.exit(1)
 
@@ -487,6 +484,38 @@ class TigerTagDB:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# API DIFF
+# ══════════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class ApiDiff:
+    """
+    A single field difference between chip data and the TigerTag+ cloud API.
+
+    Returned by TigerTag.diff_api().
+
+    Attributes:
+        field      : Field name (e.g. "nozzle_min").
+        chip_value : Value currently stored on the chip.
+        api_value  : Value returned by the cloud API.
+
+    Example:
+        from parse_tigertag import ApiDiff, TigerTag
+
+        diffs = tag.diff_api()
+        for d in diffs:
+            print(f"{d.field}: chip={d.chip_value!r}  →  api={d.api_value!r}")
+    """
+
+    field:      str
+    chip_value: Any
+    api_value:  Any
+
+    def __repr__(self) -> str:
+        return f"  {self.field}: chip={self.chip_value!r}  →  api={self.api_value!r}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # SIGNATURE RESULT
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -546,21 +575,31 @@ class SignatureResult:
 @dataclass
 class TigerTag:
     """
-    Parsed TigerTag NTAG213 payload.
+    TigerTag chip payload — full CRUD interface.
 
     All fields are plain integers/bytes/strings. Use a TigerTagDB instance
-    (via .db property or .resolve()) to get human-readable labels.
+    (via .db property or pass one to to_dict()) to get human-readable labels.
 
-    Create instances with:
-        TigerTag.from_dump(bytes)  — parse from binary dump
-        TigerTag.from_file(path)   — parse from .bin file
+    Create:
+        tag = TigerTag.create(id_material=38219, nozzle_temp_min=190, ...)
+        chip.write_pages(4, tag.to_bytes())
 
-    Example:
+    Read:
+        tag = TigerTag.from_pages(payload, uid=uid)
+        tag = TigerTag.from_dump(data)
         tag = TigerTag.from_file("dump.bin")
-        tag.sync_db()             # auto-download databases if needed
-        print(tag.pretty())       # human-readable
-        d = tag.to_dict()         # dict for JSON / API
-        result = tag.verify()     # SignatureResult
+
+    Update (surgical, immutable):
+        new_tag = tag.patch(dry_temp=55, nozzle_temp_max=240)
+
+    Update (auto-sync from cloud API — TigerTag+ only):
+        new_tag, applied = tag.patch_from_api()
+
+    Init (mark chip as reserved without full programming):
+        chip.write_pages(4, TigerTag.as_init().to_bytes())
+
+    Delete (wipe back to blank):
+        chip.write_pages(4, TigerTag.erase())
     """
 
     # ── Identity ──────────────────────────────────────────────────────────────
@@ -621,14 +660,22 @@ class TigerTag:
 
     @property
     def is_maker(self) -> bool:
+        """True when id_product == 0xFFFFFFFF (offline Maker tag)."""
         return self.id_product == MAKER_PRODUCT_ID
 
     @property
     def is_init(self) -> bool:
+        """True when id_product == 0x00000000 (blank/uninitialized tag)."""
         return self.id_product == INIT_PRODUCT_ID
 
     @property
+    def is_plus(self) -> bool:
+        """True when the tag has a cloud product ID (TigerTag+)."""
+        return not self.is_maker and not self.is_init
+
+    @property
     def is_signed(self) -> bool:
+        """True when the tag carries an ECDSA signature (pages 0x18-0x27 non-zero)."""
         return self.signature_r != bytes(32) or self.signature_s != bytes(32)
 
     @property
@@ -643,6 +690,7 @@ class TigerTag:
 
     @property
     def manufacturing_date(self) -> datetime:
+        """Manufacturing timestamp as UTC datetime."""
         return datetime.fromtimestamp(
             _TIGERTAG_EPOCH.timestamp() + self.timestamp,
             tz=timezone.utc,
@@ -650,21 +698,40 @@ class TigerTag:
 
     @property
     def color1_hex(self) -> str:
+        """Primary color as #RRGGBB hex string."""
         return f"#{self.color1_r:02X}{self.color1_g:02X}{self.color1_b:02X}"
 
     @property
     def color2_hex(self) -> str:
+        """Secondary color as #RRGGBB hex string."""
         return f"#{self.color2_r:02X}{self.color2_g:02X}{self.color2_b:02X}"
 
     @property
     def color3_hex(self) -> str:
+        """Tertiary color as #RRGGBB hex string."""
         return f"#{self.color3_r:02X}{self.color3_g:02X}{self.color3_b:02X}"
 
     @property
     def stock_percent(self) -> Optional[float]:
+        """Remaining material as a percentage, or None if measure is zero."""
         if self.measure == 0:
             return None
         return round((self.measure_available / self.measure) * 100, 1)
+
+    @property
+    def product_page_url(self) -> Optional[str]:
+        """Public product page URL (TigerTag+ only, None otherwise)."""
+        if self.is_maker or self.is_init:
+            return None
+        return f"{_PRODUCT_PAGE_BASE}/{self.id_product}"
+
+    @property
+    def api_url(self) -> Optional[str]:
+        """Direct API URL returning the full enriched product JSON (TigerTag+ only)."""
+        if self.is_maker or self.is_init:
+            return None
+        uid_part = f"uid={int(self.uid_hex, 16)}&" if self.uid_hex else ""
+        return f"{_API_PRODUCT_BASE}?{uid_part}product_id={self.id_product}"
 
     # ── Database ──────────────────────────────────────────────────────────────
 
@@ -677,9 +744,302 @@ class TigerTag:
 
     def sync_db(self, db_path: Path = None, force: bool = False) -> List[str]:
         """Download or update reference databases. Returns list of updated files."""
-        path = db_path or (Path(__file__).parent / "database")
+        path = Path(db_path) if db_path else Path(__file__).parent / "database"
         self._db = TigerTagDB(path, auto_sync=True)
-        return []
+        return self._db.sync(force=force)
+
+    # ── Cloud API (TigerTag+ only) ────────────────────────────────────────────
+
+    def raw_api(self, timeout: int = 5) -> Optional[Dict[str, Any]]:
+        """
+        Fetch the raw TigerTag+ cloud product data from the API.
+
+        Returns the unmodified API JSON as a Python dict.
+        Only meaningful for TigerTag+ chips (returns None for Maker/Init tags).
+        Uses stdlib urllib — no extra dependency required.
+
+        Args:
+            timeout : Request timeout in seconds (default: 5).
+
+        Returns:
+            Raw API response dict, or None if not a TigerTag+ chip.
+
+        Raises:
+            RuntimeError : If the network request fails.
+
+        Example:
+            data = tag.raw_api()
+            if data:
+                print(data["title"])
+        """
+        if self.is_maker or self.is_init:
+            return None
+
+        import json as _json
+        import urllib.error
+        import urllib.request
+
+        try:
+            with urllib.request.urlopen(self.api_url, timeout=timeout) as resp:
+                return _json.loads(resp.read().decode("utf-8"))
+        except urllib.error.URLError as exc:
+            raise RuntimeError(
+                f"TigerTag+ API request failed ({exc}). "
+                f"Verify network access or browse: {self.product_page_url}"
+            ) from exc
+
+    def diff_api(
+        self,
+        api_data: Optional[Dict[str, Any]] = None,
+        db: Optional[TigerTagDB] = None,
+    ) -> List[ApiDiff]:
+        """
+        Compare chip data against the TigerTag+ cloud API.
+
+        Returns a list of ApiDiff entries for every field whose value on the chip
+        differs from what the API currently reports. Empty list = fully in sync.
+
+        Args:
+            api_data : Pre-fetched result of raw_api(). Fetched automatically when None.
+            db       : Optional TigerTagDB.
+
+        Returns:
+            List of ApiDiff. Empty = in sync.
+
+        Raises:
+            RuntimeError : If api_data is None and the network request fails.
+
+        Example:
+            diffs = tag.diff_api()
+            for d in diffs:
+                print(d)
+        """
+        if self.is_maker or self.is_init:
+            return []
+
+        _db  = db or self.db
+        data = api_data if api_data is not None else self.raw_api()
+        if not data:
+            return []
+
+        diffs: List[ApiDiff] = []
+
+        def _lbl(entry: Any) -> str:
+            return (TigerTagDB.label(entry) or "").strip().lower()
+
+        def _check(fname: str, chip_val: Any, api_val: Any) -> None:
+            if api_val is None:
+                return
+            if str(chip_val).strip().lower() != str(api_val).strip().lower():
+                diffs.append(ApiDiff(fname, chip_val, api_val))
+
+        fil    = data.get("filament") or {}
+        nozzle = data.get("nozzle")   or {}
+        bed    = data.get("bed")      or {}
+        dryer  = data.get("dryer")    or {}
+
+        # Temperatures
+        _check("nozzle_min", self.nozzle_temp_min, nozzle.get("temp_min"))
+        _check("nozzle_max", self.nozzle_temp_max, nozzle.get("temp_max"))
+        _check("bed_min",    self.bed_temp_min,    bed.get("temp_min"))
+        _check("bed_max",    self.bed_temp_max,    bed.get("temp_max"))
+        _check("dry_temp",   self.dry_temp,        dryer.get("temp"))
+        _check("dry_time",   self.dry_time,        dryer.get("time"))
+
+        # Material identification
+        _check("type",     _lbl(_db.type_(self.id_type)),        (data.get("product_type") or "").lower())
+        _check("material", _lbl(_db.material(self.id_material)), (fil.get("material") or "").lower())
+        _check("brand",    _lbl(_db.brand(self.id_brand)),       (data.get("brand") or "").lower())
+        _check("diameter", TigerTagDB.label(_db.diameter(self.id_diameter)) or "",
+                           str(fil.get("diameter") or ""))
+
+        _EMPTY_ASPECT = {"", "unknown", "-", "none"}
+
+        def _check_aspect(fname: str, chip_id: int, api_val: Optional[str]) -> None:
+            chip_lbl = _lbl(_db.aspect(chip_id))
+            api_norm = (api_val or "").strip().lower()
+            if chip_lbl in _EMPTY_ASPECT and api_norm in _EMPTY_ASPECT:
+                return
+            if chip_lbl != api_norm:
+                diffs.append(ApiDiff(fname, chip_lbl or "none", api_val or "none"))
+
+        _check_aspect("aspect_1", self.id_aspect_1, fil.get("aspect1"))
+        _check_aspect("aspect_2", self.id_aspect_2, fil.get("aspect2"))
+
+        # Colors
+        def _parse_api_color(hex_str: str) -> Optional[Tuple[int, int, int, int]]:
+            h = (hex_str or "").lstrip("#")
+            try:
+                if len(h) == 8:
+                    return int(h[0:2],16), int(h[2:4],16), int(h[4:6],16), int(h[6:8],16)
+                if len(h) == 6:
+                    return int(h[0:2],16), int(h[2:4],16), int(h[4:6],16), 255
+            except ValueError:
+                pass
+            return None
+
+        api_colors: List[str] = []
+        color_info = fil.get("color_info") or {}
+        if color_info.get("colors"):
+            api_colors = [c for c in color_info["colors"] if c]
+        elif fil.get("color"):
+            api_colors = [fil["color"]]
+
+        if api_colors:
+            c = _parse_api_color(api_colors[0])
+            if c:
+                chip_hex = f"#{self.color1_r:02X}{self.color1_g:02X}{self.color1_b:02X}{self.color1_a:02X}"
+                api_hex  = f"#{c[0]:02X}{c[1]:02X}{c[2]:02X}{c[3]:02X}"
+                if chip_hex.lower() != api_hex.lower():
+                    diffs.append(ApiDiff("color_1", chip_hex, api_hex))
+
+        if len(api_colors) > 1:
+            c = _parse_api_color(api_colors[1])
+            if c:
+                chip_hex = f"#{self.color2_r:02X}{self.color2_g:02X}{self.color2_b:02X}"
+                api_hex  = f"#{c[0]:02X}{c[1]:02X}{c[2]:02X}"
+                if chip_hex.lower() != api_hex.lower():
+                    diffs.append(ApiDiff("color_2", chip_hex, api_hex))
+
+        if len(api_colors) > 2:
+            c = _parse_api_color(api_colors[2])
+            if c:
+                chip_hex = f"#{self.color3_r:02X}{self.color3_g:02X}{self.color3_b:02X}"
+                api_hex  = f"#{c[0]:02X}{c[1]:02X}{c[2]:02X}"
+                if chip_hex.lower() != api_hex.lower():
+                    diffs.append(ApiDiff("color_3", chip_hex, api_hex))
+
+        if fil.get("grams") is not None:
+            _check("measure_g", self.measure, int(fil["grams"]))
+        if fil.get("measure_unit"):
+            _check("measure_unit",
+                   TigerTagDB.label(_db.unit(self.id_unit)) or "",
+                   (fil["measure_unit"] or "").strip())
+
+        return diffs
+
+    def patch(self, **kwargs: Any) -> "TigerTag":
+        """
+        Return a new TigerTag with selected fields replaced (immutable).
+
+        Protected fields (id_tigertag, id_product, uid, signature_r, signature_s)
+        are covered by the ECDSA signature and cannot be modified.
+
+        Args:
+            **kwargs: Field names and their new values.
+
+        Returns:
+            A new TigerTag instance with the requested fields updated.
+            The original instance is unchanged.
+
+        Raises:
+            ValueError: If any protected or unknown field is requested.
+
+        Example:
+            updated = tag.patch(nozzle_temp_min=200, dry_temp=55)
+        """
+        protected = set(kwargs.keys()) & _PROTECTED_FIELDS
+        if protected:
+            raise ValueError(
+                f"Cannot modify protected field(s): {', '.join(sorted(protected))}. "
+                "These fields are covered by the ECDSA signature and must never change."
+            )
+        valid = {f.name for f in _dc_fields(self)} - _PROTECTED_FIELDS
+        unknown = set(kwargs.keys()) - valid
+        if unknown:
+            raise ValueError(
+                f"Unknown field(s): {', '.join(sorted(unknown))}. "
+                f"Valid patchable fields: {', '.join(sorted(valid))}"
+            )
+        return _dc_replace(self, **kwargs)
+
+    def patch_from_api(
+        self,
+        api_data: Optional[Dict[str, Any]] = None,
+        db: Optional[TigerTagDB] = None,
+    ) -> Tuple["TigerTag", List[ApiDiff]]:
+        """
+        Apply API-sourced field updates surgically, without touching the signature.
+
+        Fetches current product data from the TigerTag+ cloud API (or uses
+        api_data if supplied), computes the diff, and patches all numeric fields
+        that differ (temperatures, drying parameters, weight).
+
+        Args:
+            api_data : Pre-fetched API dict. If None, calls raw_api().
+            db       : Override the database used for label resolution.
+
+        Returns:
+            (updated_tag, applied_diffs) — a patched TigerTag and the list of
+            ApiDiff entries that were applied. Returns (self, []) for Maker/Init.
+
+        Raises:
+            RuntimeError: If the network request fails (only when api_data is None).
+
+        Example:
+            new_tag, applied = tag.patch_from_api()
+            if applied:
+                print(f"Updated {len(applied)} field(s).")
+                chip.write_pages(4, new_tag.to_bytes())
+        """
+        if self.is_maker or self.is_init:
+            return self, []
+
+        _db  = db or self.db
+        data = api_data if api_data is not None else self.raw_api()
+        if not data:
+            return self, []
+
+        diffs = self.diff_api(api_data=data, db=_db)
+        if not diffs:
+            return self, []
+
+        _FIELD_MAP: Dict[str, str] = {
+            "nozzle_min": "nozzle_temp_min",
+            "nozzle_max": "nozzle_temp_max",
+            "bed_min":    "bed_temp_min",
+            "bed_max":    "bed_temp_max",
+            "dry_temp":   "dry_temp",
+            "dry_time":   "dry_time",
+            "measure_g":  "measure",
+        }
+
+        def _hex_to_rgba(hex_str: str) -> Optional[Tuple[int, int, int, int]]:
+            h = hex_str.lstrip("#")
+            try:
+                if len(h) == 8:
+                    return int(h[0:2],16), int(h[2:4],16), int(h[4:6],16), int(h[6:8],16)
+                if len(h) == 6:
+                    return int(h[0:2],16), int(h[2:4],16), int(h[4:6],16), 255
+            except ValueError:
+                pass
+            return None
+
+        updates: Dict[str, Any] = {}
+        applied: List[ApiDiff]  = []
+        for diff in diffs:
+            if diff.field in ("color_1", "color_2", "color_3"):
+                rgba = _hex_to_rgba(str(diff.api_value))
+                if rgba:
+                    r, g, b, a = rgba
+                    if diff.field == "color_1":
+                        updates.update(color1_r=r, color1_g=g, color1_b=b, color1_a=a)
+                    elif diff.field == "color_2":
+                        updates.update(color2_r=r, color2_g=g, color2_b=b)
+                    else:
+                        updates.update(color3_r=r, color3_g=g, color3_b=b)
+                    applied.append(diff)
+                continue
+
+            tag_field = _FIELD_MAP.get(diff.field)
+            if tag_field:
+                updates[tag_field] = int(diff.api_value)
+                applied.append(diff)
+
+        if not updates:
+            return self, []
+
+        return self.patch(**updates), applied
 
     # ── Constructors ──────────────────────────────────────────────────────────
 
@@ -696,35 +1056,13 @@ class TigerTag:
                       80 bytes  = pages 0x04-0x17 (user data, no signature)
                       144 bytes = pages 0x04-0x27 (user data + ECDSA signature)
             uid     : 7-byte chip UID as returned natively by the NFC SDK.
-                      Used as raw bytes for signature verification.
-                      NOT a hex string, NOT a decimal integer — raw bytes only.
+                      Raw bytes only — NOT a hex string, NOT a decimal integer.
             db      : Optional pre-loaded TigerTagDB instance.
 
         Returns:
             TigerTag with .uid set and .verify() fully operational.
 
-        Examples:
-            # Android (NfcA / MifareUltralight)
-            uid     = tag.id                          # ByteArray → bytes
-            payload = mifare.readPages(4, 39)         # 144 bytes
-
-            # iOS (CoreNFC)
-            uid     = tag.identifier                  # Data → bytes
-            payload = tag.readNDEF(...)               # pages 4-39
-
-            # Flutter (flutter_nfc_kit)
-            uid     = bytes.fromhex(tag.id)
-            payload = await FlutterNfcKit.readBlock(4, length=144)
-
-            # Python nfcpy / ACR122U
-            uid     = tag.identifier                  # bytes
-            payload = tag.read(4, 36)                 # 36 pages × 4 bytes
-
-            # Arduino MFRC522
-            uid     = mfrc522.uid.uidByte             # byte array
-            # read pages 4-39 manually into payload buffer
-
-            # Then in all cases:
+        Example:
             tag = TigerTag.from_pages(payload, uid=uid)
             result = tag.verify()  # ✅ fully autonomous
         """
@@ -752,7 +1090,7 @@ class TigerTag:
 
         Args:
             data : Accepted sizes:
-                   180 bytes — full NTAG213 chip dump (pages 0-44):
+                   180 bytes — full chip dump (pages 0-44):
                                UID auto-extracted from system pages.
                    144 bytes — user data + signature (pages 0x04-0x27):
                                UID not available, signature cannot be verified.
@@ -765,21 +1103,11 @@ class TigerTag:
         uid: Optional[bytes] = None
 
         if len(data) == CHIP_DUMP_LEN:
-            # Full chip dump: extract 7-byte UID from system pages, strip system+CFG
-            # NTAG213 memory layout:
-            #   Bytes   0-15  : system pages 0-3 (UID, BCC, lock, CC)
-            #   Bytes  16-159 : user pages 4-39  (144 bytes, our payload)
-            #   Bytes 160-179 : CFG pages 40-44  (configuration, ignored)
-            #
-            # UID layout in system pages:
-            #   Page 0 [0:3] = UID[0], UID[1], UID[2]  (byte 3 = BCC0, not part of UID)
-            #   Page 1 [0:4] = UID[3], UID[4], UID[5], UID[6]
-            #   → 7-byte UID = bytes[0:3] + bytes[4:8]
-            #
-            # UID is used as RAW BYTES for signature verification
-            # (NOT as hex string, NOT as decimal — raw binary per ISO 14443)
+            # Extract 7-byte UID from system pages:
+            #   Page 0 [0:3] = UID[0..2], Page 1 [0:4] = UID[3..6]
+            #   Byte 3 of page 0 is BCC0 (XOR check) — excluded from UID.
             uid  = data[0:3] + data[4:8]
-            data = data[16:160]  # user data only: pages 0x04-0x27 (144 bytes)
+            data = data[16:160]  # strip system pages → 144 bytes of user data
 
         if len(data) not in (MIN_DATA_LEN, FULL_DATA_LEN):
             raise ValueError(
@@ -792,8 +1120,8 @@ class TigerTag:
         def u24(o: int) -> int: return (data[o]<<16)|(data[o+1]<<8)|data[o+2]
         def u32(o: int) -> int: return struct.unpack_from(">I", data, o)[0]
 
-        msg = data[48:76].rstrip(b"\x00").decode("utf-8", errors="replace")
-        sig_r = data[80:112] if len(data) >= FULL_DATA_LEN else bytes(32)
+        msg   = data[48:76].rstrip(b"\x00").decode("utf-8", errors="replace")
+        sig_r = data[80:112]  if len(data) >= FULL_DATA_LEN else bytes(32)
         sig_s = data[112:144] if len(data) >= FULL_DATA_LEN else bytes(32)
 
         tag = cls(
@@ -848,6 +1176,193 @@ class TigerTag:
         """
         with open(path, "rb") as f:
             return cls.from_dump(f.read(), db=db)
+
+    # ── CRUD constructors ─────────────────────────────────────────────────────
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        product_id: int = MAKER_PRODUCT_ID,
+        uid: Optional[bytes] = None,
+        id_material: int = 0,
+        id_aspect_1: int = 0,
+        id_aspect_2: int = 0,
+        id_type:     int = 0,
+        id_diameter: int = 0,
+        id_brand:    int = 0,
+        color1_r: int = 0, color1_g: int = 0, color1_b: int = 0, color1_a: int = 255,
+        color2_r: int = 0, color2_g: int = 0, color2_b: int = 0,
+        color3_r: int = 0, color3_g: int = 0, color3_b: int = 0,
+        measure:         int = 0,
+        id_unit:         int = 0,
+        nozzle_temp_min: int = 0,
+        nozzle_temp_max: int = 0,
+        dry_temp:        int = 0,
+        dry_time:        int = 0,
+        bed_temp_min:    int = 0,
+        bed_temp_max:    int = 0,
+        timestamp:      Optional[int] = None,
+        custom_message: str = "",
+        td_raw: int = 0,
+        db: Optional[TigerTagDB] = None,
+    ) -> "TigerTag":
+        """
+        Create a new TigerTag from scratch, ready to write to a chip.
+
+        The protocol version (id_tigertag) is inferred automatically:
+        - product_id omitted or 0xFFFFFFFF → TigerTag (Maker / offline)
+        - product_id is a real cloud ID    → TigerTag+
+
+        Args:
+            product_id      : Cloud product ID for TigerTag+, or MAKER_PRODUCT_ID
+                              (default) for an offline Maker tag.
+            uid             : 7-byte chip UID, if known.
+            id_material     : Material ID from id_material.json.
+            id_aspect_1     : Primary aspect ID from id_aspect.json.
+            id_aspect_2     : Secondary aspect ID from id_aspect.json.
+            id_type         : Type ID from id_type.json.
+            id_diameter     : Diameter ID from id_diameter.json.
+            id_brand        : Brand ID from id_brand.json.
+            color1_r/g/b/a  : Primary colour (RGBA, 0-255).
+            color2_r/g/b    : Secondary colour.
+            color3_r/g/b    : Tertiary colour.
+            measure         : Initial quantity at manufacturing.
+            id_unit         : Unit ID from id_measure_unit.json.
+            nozzle_temp_min : Minimum nozzle temperature (°C).
+            nozzle_temp_max : Maximum nozzle temperature (°C).
+            dry_temp        : Drying temperature (°C).
+            dry_time        : Drying time (hours).
+            bed_temp_min    : Minimum bed temperature (°C).
+            bed_temp_max    : Maximum bed temperature (°C).
+            timestamp       : Seconds since 2000-01-01 UTC. Defaults to now.
+            custom_message  : Free-text traceability field (max 28 bytes UTF-8).
+            td_raw          : HueForge TD × 10 (0 = undefined).
+            db              : Optional pre-loaded TigerTagDB.
+
+        Returns:
+            A new TigerTag instance ready for to_bytes().
+
+        Example:
+            tag = TigerTag.create(
+                id_material=38219,       # PLA
+                id_brand=19961,          # Rosa3D
+                nozzle_temp_min=195, nozzle_temp_max=230,
+                color1_r=255, color1_g=0, color1_b=0, color1_a=255,
+                measure=1000, id_unit=21,
+            )
+            chip.write_pages(4, tag.to_bytes())
+        """
+        if product_id != MAKER_PRODUCT_ID and product_id != INIT_PRODUCT_ID:
+            id_tigertag = ID_TIGERTAG_PLUS
+        else:
+            id_tigertag = ID_TIGERTAG
+            product_id  = MAKER_PRODUCT_ID
+
+        if timestamp is None:
+            timestamp = max(0, int(
+                datetime.now(tz=timezone.utc).timestamp()
+                - _TIGERTAG_EPOCH.timestamp()
+            ))
+
+        tag = cls(
+            id_tigertag       = id_tigertag,
+            id_product        = product_id,
+            id_material       = id_material,
+            id_aspect_1       = id_aspect_1,
+            id_aspect_2       = id_aspect_2,
+            id_type           = id_type,
+            id_diameter       = id_diameter,
+            id_brand          = id_brand,
+            color1_r          = color1_r,
+            color1_g          = color1_g,
+            color1_b          = color1_b,
+            color1_a          = color1_a,
+            color2_r          = color2_r,
+            color2_g          = color2_g,
+            color2_b          = color2_b,
+            color3_r          = color3_r,
+            color3_g          = color3_g,
+            color3_b          = color3_b,
+            measure           = measure,
+            id_unit           = id_unit,
+            measure_available = measure,
+            nozzle_temp_min   = nozzle_temp_min,
+            nozzle_temp_max   = nozzle_temp_max,
+            dry_temp          = dry_temp,
+            dry_time          = dry_time,
+            bed_temp_min      = bed_temp_min,
+            bed_temp_max      = bed_temp_max,
+            timestamp         = timestamp,
+            custom_message    = custom_message,
+            td_raw            = td_raw,
+            uid               = uid,
+            _db               = db,
+        )
+        return tag
+
+    @classmethod
+    def as_init(cls, uid: Optional[bytes] = None) -> "TigerTag":
+        """
+        Create a TigerTag Init payload.
+
+        Init marks the chip as reserved for TigerTag without programming any
+        material data yet. Write to_bytes() to the chip; any reader will
+        recognise it as a blank TigerTag placeholder.
+
+        This step is optional: create() can go directly from a blank chip to a
+        fully programmed TigerTag or TigerTag+.
+
+        Args:
+            uid : 7-byte chip UID, if known.
+
+        Returns:
+            A TigerTag with id_tigertag = ID_TIGERTAG_INIT, id_product = 0,
+            and all material fields zeroed.
+
+        Example:
+            init_tag = TigerTag.as_init(uid=chip.uid)
+            chip.write_pages(4, init_tag.to_bytes())
+        """
+        ts = max(0, int(
+            datetime.now(tz=timezone.utc).timestamp()
+            - _TIGERTAG_EPOCH.timestamp()
+        ))
+        return cls(
+            id_tigertag       = ID_TIGERTAG_INIT,
+            id_product        = INIT_PRODUCT_ID,
+            id_material       = 0,
+            id_aspect_1       = 0, id_aspect_2 = 0,
+            id_type           = 0, id_diameter = 0, id_brand = 0,
+            color1_r          = 0, color1_g = 0, color1_b = 0, color1_a = 255,
+            color2_r          = 0, color2_g = 0, color2_b = 0,
+            color3_r          = 0, color3_g = 0, color3_b = 0,
+            measure           = 0, id_unit = 0, measure_available = 0,
+            nozzle_temp_min   = 0, nozzle_temp_max = 0,
+            dry_temp          = 0, dry_time = 0,
+            bed_temp_min      = 0, bed_temp_max = 0,
+            timestamp         = ts,
+            custom_message    = "",
+            td_raw            = 0,
+            uid               = uid,
+        )
+
+    @classmethod
+    def erase(cls) -> bytes:
+        """
+        Return the 80-byte payload that wipes a TigerTag chip back to blank.
+
+        Writing these bytes to pages 0x04-0x17 destroys all TigerTag data.
+        The chip becomes a plain chip with no TigerTag structure — it can be
+        reprogrammed as a new TigerTag at any time with create().
+
+        Returns:
+            bytes(80) — 80 zero bytes, pages 0x04-0x17.
+
+        Example:
+            chip.write_pages(4, TigerTag.erase())
+        """
+        return bytes(MIN_DATA_LEN)
 
     # ── Serializer ────────────────────────────────────────────────────────────
 
@@ -929,23 +1444,20 @@ class TigerTag:
 
         The signed message is: SHA-256( uid_bytes + block4 + block5 )
           uid_bytes = 7 raw bytes from chip pages 0-1
-                      (raw binary, NOT hex string, NOT decimal — per ISO 14443)
           block4    = id_tigertag as 4-byte big-endian (page 0x04)
           block5    = id_product  as 4-byte big-endian (page 0x05)
-
-        The public key is read automatically from id_version.json.
 
         Returns:
             SignatureResult with .ok (bool) and .status (str)
 
         Requires:
-            - 180-byte chip dump (for UID extraction)
+            - 180-byte chip dump or from_pages() with uid (for UID)
             - pip install cryptography
             - id_version.json with "public_key" field
 
         Example:
             result = tag.verify()
-            print(result)        # ✅ VALID  /  ❌ INVALID  /  ⬜ NOT SIGNED  …
+            print(result)        # ✅ VALID  /  ❌ INVALID  /  ⬜ NOT SIGNED
             print(result.ok)     # True / False
         """
         if not self.is_signed:
@@ -957,7 +1469,7 @@ class TigerTag:
         if not self.uid:
             return SignatureResult(
                 SignatureResult.NO_UID,
-                "Provide a full 180-byte chip dump (system pages 0-3 include the UID).",
+                "Provide a full 180-byte chip dump or use from_pages(payload, uid=uid).",
             )
 
         _db = db or self.db
@@ -970,9 +1482,6 @@ class TigerTag:
             )
 
         try:
-            # Signed message: UID (raw bytes) + block4 + block5
-            # UID is used as 7 raw binary bytes, which is the NFC/ISO 14443 standard.
-            # NOT as a hex string, NOT as a decimal integer — raw bytes only.
             block4  = self.id_tigertag.to_bytes(4, "big")
             block5  = self.id_product.to_bytes(4, "big")
             message = self.uid + block4 + block5
@@ -996,6 +1505,49 @@ class TigerTag:
 
     # ── Output ────────────────────────────────────────────────────────────────
 
+    def to_raw_dict(self) -> Dict[str, Any]:
+        """
+        Return protocol fields exactly as stored on the chip — no label resolution,
+        no unit conversion, no date formatting. Raw integers only.
+
+        This is the canonical "source of truth" view.
+        """
+        return {
+            "id_tigertag":       self.id_tigertag,
+            "id_product":        self.id_product,
+            "id_material":       self.id_material,
+            "id_aspect1":        self.id_aspect_1,
+            "id_aspect2":        self.id_aspect_2,
+            "id_type":           self.id_type,
+            "id_diameter":       self.id_diameter,
+            "id_brand":          self.id_brand,
+            "color_r":           self.color1_r,
+            "color_g":           self.color1_g,
+            "color_b":           self.color1_b,
+            "color_a":           self.color1_a,
+            "measure":           self.measure,
+            "id_unit":           self.id_unit,
+            "nozzle_min":        self.nozzle_temp_min,
+            "nozzle_max":        self.nozzle_temp_max,
+            "dry_temp":          self.dry_temp,
+            "dry_time":          self.dry_time,
+            "bed_min":           self.bed_temp_min,
+            "bed_max":           self.bed_temp_max,
+            "timestamp":         self.timestamp,
+            "color_r2":          self.color2_r,
+            "color_g2":          self.color2_g,
+            "color_b2":          self.color2_b,
+            "color_r3":          self.color3_r,
+            "color_g3":          self.color3_g,
+            "color_b3":          self.color3_b,
+            "td_raw":            self.td_raw,
+            "message":           self.custom_message,
+            "measure_available": self.measure_available,
+            "uid":               self.uid_hex,
+            "product_page_url":  self.product_page_url,
+            "api_url":           self.api_url,
+        }
+
     def to_dict(self, db: TigerTagDB = None) -> Dict:
         """
         Return a fully-resolved dict (all IDs replaced by their labels + metadata).
@@ -1012,9 +1564,8 @@ class TigerTag:
 
         return {
             "sdk":        "tigertag-sdk-python",
-            "sdk_mode":   "offline",          # reads chip data only — no API enrichment
-            "protocol":   "TigerTag Open Source v2.0",
-            "chip":       "NTAG213",
+            "sdk_mode":   "offline",
+            "protocol":   "TigerTag Open Source v2.1",
             "uid":        self.uid_hex,
             "version": {
                 "id":    self.id_tigertag,
@@ -1024,12 +1575,6 @@ class TigerTag:
             "product": {
                 "id":   self.id_product,
                 "mode": "maker" if self.is_maker else "init" if self.is_init else "cloud",
-                # TigerTag+ (mode=cloud): id_product is a cloud product ID.
-                # This SDK reads it from the chip like any other field.
-                # To retrieve enriched product data from the TigerTag cloud:
-                #   GET https://api.tigertag.io/api:tigertag/product/get
-                #         ?uid={uid_hex}&product_id={id_product}
-                # (handled by the future tigertag-sdk-online, not this SDK)
             },
             "material": {
                 "id":      self.id_material,
@@ -1096,7 +1641,7 @@ class TigerTag:
         return (
             f"┌─ TigerTag ────────────────────────────────────────────\n"
             f"│  Version      {TigerTagDB.label(_db.version(self.id_tigertag))} (0x{self.id_tigertag:08X})\n"
-            f"│  Product      {'Maker (offline)' if self.is_maker else f'Cloud #{self.id_product}'}\n"
+            f"│  Product      {'Maker (offline)' if self.is_maker else ('Init' if self.is_init else f'TigerTag+ #{self.id_product}')}\n"
             f"│  UID          {self.uid_hex or '— (partial dump)'}\n"
             f"├─ Material ────────────────────────────────────────────\n"
             f"│  Material     {TigerTagDB.label(_db.material(self.id_material))}  (id={self.id_material})\n"
@@ -1137,11 +1682,11 @@ if __name__ == "__main__":
     import argparse
 
     ap = argparse.ArgumentParser(
-        description="TigerTag NTAG213 standalone SDK — parse, verify, export",
+        description="TigerTag standalone SDK — parse, verify, export, sync",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "examples:\n"
-            "  python parse_tigertag.py dump.bin              # parse + auto-sync DB\n"
+            "  python parse_tigertag.py dump.bin              # parse + pretty print\n"
             "  python parse_tigertag.py dump.bin --json       # output as JSON\n"
             "  python parse_tigertag.py dump.bin --raw        # raw IDs, no DB lookup\n"
             "  python parse_tigertag.py --sync-only           # update databases only\n"
@@ -1154,13 +1699,14 @@ if __name__ == "__main__":
             "spec: https://github.com/TigerTag-Project/TigerTag-RFID-Guide"
         ),
     )
-    ap.add_argument("dump",       nargs="?",    help="Binary .bin file to parse")
-    ap.add_argument("--db",       metavar="PATH", default=None,
+    ap.add_argument("dump",        nargs="?",      help="Binary .bin file to parse")
+    ap.add_argument("--db",        metavar="PATH", default=None,
                     help="Database folder (default: ./database next to this script)")
-    ap.add_argument("--json",     action="store_true", help="Output as JSON")
-    ap.add_argument("--raw",      action="store_true", help="Print raw dataclass, no DB lookup")
-    ap.add_argument("--no-sync",  action="store_true", help="Do not auto-download databases")
-    ap.add_argument("--sync-only",action="store_true", help="Update databases and exit")
+    ap.add_argument("--json",      action="store_true", help="Output as JSON")
+    ap.add_argument("--raw",       action="store_true", help="Print raw dataclass, no DB lookup")
+    ap.add_argument("--no-sync",   action="store_true", help="Do not auto-download databases")
+    ap.add_argument("--sync-only", action="store_true", help="Update databases and exit")
+    ap.add_argument("--version",   action="version",    version="parse_tigertag.py v1.1")
     args = ap.parse_args()
 
     db_path = Path(args.db) if args.db else Path(__file__).parent / "database"
@@ -1197,7 +1743,7 @@ if __name__ == "__main__":
     # Raw mode (no DB)
     if args.raw:
         import pprint
-        pprint.pprint(tag)
+        pprint.pprint(tag.to_raw_dict())
         sys.exit(0)
 
     # Load DB (auto-sync unless --no-sync)
