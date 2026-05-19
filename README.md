@@ -35,7 +35,9 @@ and the only open-source standard with broad manufacturer adoption at scale.
 | Ecosystem maturity | Desktop app · Mobile app · Pod · DIY scale · Firebase · Python SDK |
 | Chip compatibility | NTAG213 · NTAG215 · NTAG216 · any ISO 14443-3 compatible |
 
-### What makes TigerTag unique
+---
+
+## What makes TigerTag unique
 
 **1 — Proof of authenticity (ECDSA-P256)**
 
@@ -84,13 +86,15 @@ The update is manufacturer-driven and cryptographically scoped — only the prod
 fields can change. The chip UID and signature remain protected. No other RFID material
 protocol gives manufacturers this level of post-deployment control over their product data.
 
----
+**4 — Native HueForge integration**
 
-TigerTag is the **only RFID protocol natively integrated with HueForge** — TD (Transmission Distance)
-values are stored directly on the chip and read by HueForge without any manual entry.
+TigerTag is the **only RFID protocol natively integrated with HueForge**. The TD (Transmission Distance)
+value is stored directly on the chip and read by HueForge without any manual entry.
 It is also the only protocol supported by **TD1s by Ajax**, the open-source filament manager.
 
-### Hardware ecosystem
+---
+
+## Hardware ecosystem
 
 | Device | What it does | Price |
 |--------|-------------|-------|
@@ -463,7 +467,7 @@ print(tag.pretty())
 | [TigerTag Firebase Integration](https://github.com/TigerTag-Project/TigerTag_Firebase_Integration) | Cloud | Firebase backend integration example |
 | [Tiger Scale](https://github.com/TigerTag-Project/Tiger-Scale) | ESP32 firmware | Open-source firmware for the DIY smart scale |
 
-Community integrations: [OpenRFID](https://github.com/suchmememanyskill/OpenRFID) · [Home Assistant](https://github.com/Kenny3231/TigerTag) · [Snapmaker U1 firmware](https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware) · [TD1s by Ajax](https://github.com/suchmememanyskill/OpenRFID)
+Community integrations: [OpenRFID](https://github.com/suchmememanyskill/OpenRFID) · [Home Assistant](https://github.com/Kenny3231/TigerTag) · [Snapmaker U1 firmware](https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware) · TD1s by Ajax
 
 ---
 
