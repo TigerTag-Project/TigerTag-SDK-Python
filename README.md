@@ -1,4 +1,4 @@
-<img src="assets/TigerTag_Banner.png" width="100%" alt="TigerTag banner">
+<img src="assets/banner.svg" width="100%" alt="TigerTag Python SDK — Open-source RFID protocol for manufacturing material identification">
 
 # TigerTag Python SDK
 
