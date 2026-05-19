@@ -1,5 +1,5 @@
 # TigerTag Python SDK — Reference for AI Agents
-# Version: 1.0.0 | Protocol: TigerTag Open Source v2.1
+# Version: 1.1.0 | Protocol: TigerTag Open Source v2.1
 # Spec: https://github.com/TigerTag-Project/TigerTag-RFID-Guide
 
 ## What this SDK does
@@ -177,6 +177,64 @@ tag.timestamp is BOTH:
       → 15 bytes total. UID as raw binary, NOT hex string.
 
 
+## Write operations (CRUD)
+
+    TigerTag.create(*, uid=None, id_material=0, id_brand=0, id_type=0,
+                    id_diameter=0, id_aspect_1=0, id_aspect_2=0,
+                    color1_r=0, color1_g=0, color1_b=0, color1_a=255,
+                    color2_r=0, color2_g=0, color2_b=0,
+                    color3_r=0, color3_g=0, color3_b=0,
+                    nozzle_temp_min=0, nozzle_temp_max=0,
+                    bed_temp_min=0, bed_temp_max=0,
+                    dry_temp=0, dry_time=0,
+                    measure=0, id_unit=21, custom="",
+                    timestamp=None, product_id=0xFFFFFFFF) -> TigerTag
+        Build a new tag from scratch. product_id=0xFFFFFFFF → TigerTag (Maker).
+        product_id=any other → TigerTag+ (id_tigertag set to ID_TIGERTAG_PLUS).
+        timestamp defaults to now (seconds since 2000-01-01 UTC).
+
+    TigerTag.as_init(uid=None) -> TigerTag
+        Create a blank TigerTag Init chip. id_tigertag=ID_TIGERTAG_INIT,
+        id_product=INIT_PRODUCT_ID (0x00000000), all fields zero.
+
+    TigerTag.erase() -> bytes
+        Returns 80 zero bytes — write this to a chip to wipe it back to blank NDEF.
+
+    tag.patch(**kwargs) -> TigerTag
+        Immutable surgical update. Returns new TigerTag with changed fields.
+        Protected fields (raise ValueError): id_tigertag, id_product, uid, signature_r, signature_s.
+        All other fields (nozzle_temp_min, id_material, color1_r, etc.) are patchable.
+        Safe to call after signing — signature remains valid as long as id_tigertag,
+        id_product and uid are untouched.
+        Example: patched = tag.patch(nozzle_temp_min=200, dry_temp=55)
+
+    tag.patch_from_api(api_data=None, db=None) -> (TigerTag, list[ApiDiff])
+        Fetch cloud API data (if api_data not provided) and apply all differing fields
+        to the chip. Returns (patched_tag, applied_diffs).
+        Color fields are unpacked from #RRGGBB(AA) hex into individual byte fields.
+        Diffs with no change are skipped. Signature-protected fields are never touched.
+
+    tag.diff_api(api_data=None, db=None) -> list[ApiDiff]
+        Compare chip fields vs TigerTag+ cloud API. Returns list of ApiDiff.
+        Only for TigerTag+ tags (raises or returns [] for Maker/Init).
+        Fields compared: nozzle_min, nozzle_max, bed_min, bed_max, dry_temp, dry_time,
+                         type, material, brand, diameter, aspect_1, aspect_2,
+                         color_1, color_2, color_3, measure_g, measure_unit.
+        Aspect "none"/"unknown"/"-"/"" are all treated as equivalent (no diff).
+
+    tag.raw_api(db=None) -> dict | None
+        Fetch live TigerTag+ cloud product data from api.tigertag.io.
+        Returns the full API JSON dict, or None on error.
+        Requires: pip install tigertag[sync] (requests library).
+        Only meaningful for TigerTag+ tags.
+
+    from tigertag import ApiDiff
+    # ApiDiff = namedtuple("ApiDiff", ["field", "chip_value", "api_value"])
+    diffs = tag.diff_api()
+    for d in diffs:
+        print(f"{d.field}: chip={d.chip_value!r} → api={d.api_value!r}")
+
+
 ## TigerTagDB — database access
 
     from tigertag import TigerTagDB
@@ -303,7 +361,10 @@ Pattern 4 — check multi-color before rendering:
       https://github.com/TigerTag-Project/TigerTag-Studio-Manager
 
     Tiger Scale — DIY ESP32 scale that reads TigerTag and updates measure_available
-      https://github.com/TigerTag-Project/Tiger_Scale
+      https://github.com/TigerTag-Project/Tiger-Scale
+
+    TigerTag Firebase Integration — Cloud backend integration example
+      https://github.com/TigerTag-Project/TigerTag_Firebase_Integration
 
     Mobile apps — iOS and Android reference apps
       iOS:     https://apps.apple.com/fr/app/tigertag-rfid-connect/id6745437963
@@ -347,7 +408,7 @@ Pattern 4 — check multi-color before rendering:
 ## What this SDK does NOT do
 
 - No cloud product enrichment (TigerTag+ cloud data requires the future online SDK)
-- No chip writing (read-only)
+- Chip writing requires your NFC SDK — this SDK generates the bytes (`tag.to_bytes()`, `TigerTag.erase()`), your NFC library writes them to the physical chip.
 - No NDEF encoding/decoding
 - Signature verification requires UID — only available from 180-byte full dumps
   or from_pages() where the NFC SDK provides the UID separately

@@ -10,10 +10,10 @@
 from __future__ import annotations
 
 import struct
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields as _dc_fields, replace as _dc_replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from tigertag.db import TigerTagDB
 from tigertag.signature import SignatureResult, _CRYPTO_AVAILABLE, verify_signature
@@ -30,27 +30,83 @@ _TIGERTAG_EPOCH = datetime(2000, 1, 1, tzinfo=timezone.utc)
 MAKER_PRODUCT_ID = 0xFFFFFFFF  # offline Maker tag
 INIT_PRODUCT_ID  = 0x00000000  # blank / uninitialized tag
 
+# Protocol version identifiers (id_tigertag field)
+ID_TIGERTAG      = 0x5BF59264  # TigerTag v1.0 (Maker / offline)
+ID_TIGERTAG_PLUS = 0xBC0FCB97  # TigerTag+ v1.0 (cloud product)
+ID_TIGERTAG_INIT = 0x6C41A2E1  # TigerTag Init (reserved, not yet programmed)
+
+_PRODUCT_PAGE_BASE = "https://tigertag.io/pages/product-infos"
+_API_PRODUCT_BASE  = "https://api.tigertag.io/api:tigertag/product/get"
+
+# Fields covered by the ECDSA signature — must never be modified after signing.
+_PROTECTED_FIELDS: frozenset = frozenset({
+    "id_tigertag", "id_product", "uid", "signature_r", "signature_s", "_db",
+})
+
+
+# ── ApiDiff ────────────────────────────────────────────────────────────────────
+
+@dataclass
+class ApiDiff:
+    """
+    A single field difference between chip data and the TigerTag+ cloud API.
+
+    Returned by :meth:`TigerTag.diff_api`.
+
+    Attributes:
+        field      : Field name (e.g. ``"nozzle_min"``).
+        chip_value : Value currently stored on the chip.
+        api_value  : Value returned by the cloud API.
+    """
+
+    field:      str
+    chip_value: Any
+    api_value:  Any
+
+    def __repr__(self) -> str:
+        return f"  {self.field}: chip={self.chip_value!r}  →  api={self.api_value!r}"
+
 
 # ── TigerTag dataclass ─────────────────────────────────────────────────────────
 
 @dataclass
 class TigerTag:
     """
-    Parsed TigerTag NTAG-compatible chip payload.
+    TigerTag NTAG-compatible chip payload — CRUD interface.
 
-    All fields are plain integers/bytes/strings. Use a TigerTagDB instance
-    (via the .db property or pass one to to_dict()) to resolve IDs to labels.
+    All fields are plain integers/bytes/strings. Use :class:`TigerTagDB`
+    (via the ``.db`` property or pass one to :meth:`to_dict`) to resolve IDs
+    to labels.
 
-    Constructors:
-        TigerTag.from_pages(payload, uid) — NFC SDK integration (recommended)
-        TigerTag.from_dump(data)          — raw binary dump (180/144/80 bytes)
-        TigerTag.from_file(path)          — convenience wrapper for .bin files
+    **Create**::
 
-    Example:
+        tag = TigerTag.create(id_material=38219, nozzle_temp_min=190, ...)
+        tag = TigerTag.create(product_id=10, ...)   # TigerTag+
+        chip.write_pages(4, tag.to_bytes())
+
+    **Read**::
+
+        tag = TigerTag.from_pages(chip.read_pages(4, 20), uid=chip.uid)
+        tag = TigerTag.from_dump(data)
         tag = TigerTag.from_file("dump.bin")
-        print(tag.pretty())
-        print(tag.verify())
-        import json; print(json.dumps(tag.to_dict(), indent=2))
+
+    **Update (surgical)**::
+
+        new_tag = tag.patch(dry_temp=55, nozzle_temp_max=240)
+        chip.write_pages(4, new_tag.to_bytes())
+
+    **Update (auto-sync from cloud API)**::
+
+        new_tag, applied = tag.patch_from_api()
+        chip.write_pages(4, new_tag.to_bytes())
+
+    **Init** (optional formatting step — reserve the chip without programming it)::
+
+        chip.write_pages(4, TigerTag.as_init().to_bytes())
+
+    **Delete** (wipe back to blank NDEF)::
+
+        chip.write_pages(4, TigerTag.erase())
     """
 
     # Identity
@@ -164,6 +220,21 @@ class TigerTag:
             return None
         return round((self.measure_available / self.measure) * 100, 1)
 
+    @property
+    def product_page_url(self) -> Optional[str]:
+        """Public product page URL (TigerTag+ only, None otherwise)."""
+        if self.is_maker or self.is_init:
+            return None
+        return f"{_PRODUCT_PAGE_BASE}/{self.id_product}"
+
+    @property
+    def api_url(self) -> Optional[str]:
+        """Direct API URL returning the full enriched product JSON (TigerTag+ only)."""
+        if self.is_maker or self.is_init:
+            return None
+        uid_part = f"uid={int(self.uid_hex, 16)}&" if self.uid_hex else ""
+        return f"{_API_PRODUCT_BASE}?{uid_part}product_id={self.id_product}"
+
     # ── Database ───────────────────────────────────────────────────────────────
 
     @property
@@ -172,6 +243,333 @@ class TigerTag:
         if self._db is None:
             self._db = TigerTagDB()
         return self._db
+
+    def raw_api(self, timeout: int = 5) -> Optional[Dict[str, Any]]:
+        """
+        Fetch the raw TigerTag+ cloud product data from the API.
+
+        Returns the unmodified API JSON as a Python dict — identical to what
+        the ☁ raw_api() tab shows in the playground.
+
+        Only meaningful for TigerTag+ chips (returns None for Maker/Init tags).
+        Uses stdlib urllib — no extra dependency required.
+
+        Args:
+            timeout : Request timeout in seconds (default: 5).
+
+        Returns:
+            Raw API response dict, or None if not a TigerTag+ chip.
+
+        Raises:
+            RuntimeError : If the network request fails.
+
+        Example:
+            data = tag.raw_api()
+            if data:
+                print(data["title"])
+                print(data["filament"]["diameter"])
+
+            # Combine with to_dict() for full offline + cloud picture:
+            offline = tag.to_dict()
+            cloud   = tag.raw_api()
+        """
+        if self.is_maker or self.is_init:
+            return None
+
+        import json as _json
+        import urllib.error
+        import urllib.request
+
+        try:
+            with urllib.request.urlopen(self.api_url, timeout=timeout) as resp:
+                return _json.loads(resp.read().decode("utf-8"))
+        except urllib.error.URLError as exc:
+            raise RuntimeError(
+                f"TigerTag+ API request failed ({exc}). "
+                f"Verify network access or browse: {self.product_page_url}"
+            ) from exc
+
+    def diff_api(
+        self,
+        api_data: Optional[Dict[str, Any]] = None,
+        db: Optional[TigerTagDB] = None,
+    ) -> List[ApiDiff]:
+        """
+        Compare chip data against the TigerTag+ cloud API.
+
+        Returns a list of :class:`ApiDiff` entries for every field whose value
+        on the chip differs from what the API currently reports.
+        An empty list means the chip is fully in sync.
+
+        Useful for detecting chips that need reprogramming after a manufacturer
+        corrects a temperature recommendation or updates product specs.
+
+        Args:
+            api_data : Pre-fetched result of :meth:`raw_api`. Fetched
+                       automatically when ``None``.
+            db       : Optional :class:`TigerTagDB`.
+
+        Returns:
+            List of :class:`ApiDiff`. Empty = in sync.
+
+        Raises:
+            RuntimeError : If ``api_data`` is ``None`` and the network request fails.
+
+        Example:
+            diffs = tag.diff_api()
+            if diffs:
+                print(f"{len(diffs)} field(s) need updating:")
+                for d in diffs:
+                    print(d)
+            else:
+                print("Chip is in sync with the API.")
+
+            # Reuse an already-fetched response to avoid a second request:
+            cloud = tag.raw_api()
+            diffs = tag.diff_api(api_data=cloud)
+        """
+        if self.is_maker or self.is_init:
+            return []
+
+        _db  = db or self.db
+        data = api_data if api_data is not None else self.raw_api()
+        if not data:
+            return []
+
+        diffs: List[ApiDiff] = []
+
+        def _lbl(entry: Any) -> str:
+            return (TigerTagDB.label(entry) or "").strip().lower()
+
+        def _check(field: str, chip_val: Any, api_val: Any) -> None:
+            if api_val is None:
+                return
+            c = str(chip_val).strip().lower()
+            a = str(api_val).strip().lower()
+            if c != a:
+                diffs.append(ApiDiff(field, chip_val, api_val))
+
+        fil    = data.get("filament") or {}
+        nozzle = data.get("nozzle")   or {}
+        bed    = data.get("bed")      or {}
+        dryer  = data.get("dryer")    or {}
+
+        # Temperatures
+        _check("nozzle_min", self.nozzle_temp_min, nozzle.get("temp_min"))
+        _check("nozzle_max", self.nozzle_temp_max, nozzle.get("temp_max"))
+        _check("bed_min",    self.bed_temp_min,    bed.get("temp_min"))
+        _check("bed_max",    self.bed_temp_max,    bed.get("temp_max"))
+        _check("dry_temp",   self.dry_temp,        dryer.get("temp"))
+        _check("dry_time",   self.dry_time,        dryer.get("time"))
+
+        # Material identification
+        _check("type",     _lbl(_db.type_(self.id_type)),          (data.get("product_type") or "").lower())
+        _check("material", _lbl(_db.material(self.id_material)),   (fil.get("material") or "").lower())
+        _check("brand",    _lbl(_db.brand(self.id_brand)),         (data.get("brand")   or "").lower())
+        _check("diameter", TigerTagDB.label(_db.diameter(self.id_diameter)) or "",
+                           str(fil.get("diameter") or ""))
+        _EMPTY_ASPECT = {"", "unknown", "-", "none"}
+
+        def _check_aspect(fname: str, chip_id: int, api_val: Optional[str]) -> None:
+            chip_lbl = _lbl(_db.aspect(chip_id))
+            api_norm = (api_val or "").strip().lower()
+            if chip_lbl in _EMPTY_ASPECT and api_norm in _EMPTY_ASPECT:
+                return  # both mean "no aspect" — not a diff
+            if chip_lbl != api_norm:
+                diffs.append(ApiDiff(fname, chip_lbl or "none", api_val or "none"))
+
+        _check_aspect("aspect_1", self.id_aspect_1, fil.get("aspect1"))
+        _check_aspect("aspect_2", self.id_aspect_2, fil.get("aspect2"))
+
+        # Colors
+        def _parse_api_color(hex_str: str) -> Optional[Tuple[int, int, int, int]]:
+            """Parse #RRGGBBAA or #RRGGBB → (r, g, b, a). Returns None on error."""
+            h = (hex_str or "").lstrip("#")
+            try:
+                if len(h) == 8:
+                    return int(h[0:2],16), int(h[2:4],16), int(h[4:6],16), int(h[6:8],16)
+                if len(h) == 6:
+                    return int(h[0:2],16), int(h[2:4],16), int(h[4:6],16), 255
+            except ValueError:
+                pass
+            return None
+
+        api_colors: List[str] = []
+        color_info = fil.get("color_info") or {}
+        if color_info.get("colors"):
+            api_colors = [c for c in color_info["colors"] if c]
+        elif fil.get("color"):
+            api_colors = [fil["color"]]
+
+        if api_colors:
+            c = _parse_api_color(api_colors[0])
+            if c:
+                chip_hex = f"#{self.color1_r:02X}{self.color1_g:02X}{self.color1_b:02X}{self.color1_a:02X}"
+                api_hex  = f"#{c[0]:02X}{c[1]:02X}{c[2]:02X}{c[3]:02X}"
+                if chip_hex.lower() != api_hex.lower():
+                    diffs.append(ApiDiff("color_1", chip_hex, api_hex))
+
+        if len(api_colors) > 1:
+            c = _parse_api_color(api_colors[1])
+            if c:
+                chip_hex = f"#{self.color2_r:02X}{self.color2_g:02X}{self.color2_b:02X}"
+                api_hex  = f"#{c[0]:02X}{c[1]:02X}{c[2]:02X}"
+                if chip_hex.lower() != api_hex.lower():
+                    diffs.append(ApiDiff("color_2", chip_hex, api_hex))
+
+        if len(api_colors) > 2:
+            c = _parse_api_color(api_colors[2])
+            if c:
+                chip_hex = f"#{self.color3_r:02X}{self.color3_g:02X}{self.color3_b:02X}"
+                api_hex  = f"#{c[0]:02X}{c[1]:02X}{c[2]:02X}"
+                if chip_hex.lower() != api_hex.lower():
+                    diffs.append(ApiDiff("color_3", chip_hex, api_hex))
+
+        # Quantity & unit
+        if fil.get("grams") is not None:
+            _check("measure_g", self.measure, int(fil["grams"]))
+        if fil.get("measure_unit"):
+            _check("measure_unit",
+                   TigerTagDB.label(_db.unit(self.id_unit)) or "",
+                   (fil["measure_unit"] or "").strip())
+
+        return diffs
+
+    # ── Surgical patch ─────────────────────────────────────────────────────────
+
+    def patch(self, **kwargs: Any) -> "TigerTag":
+        """
+        Return a new :class:`TigerTag` with selected fields replaced.
+
+        The ECDSA signature covers ``uid``, ``id_tigertag``, and ``id_product``.
+        Modifying these would invalidate the signature, so they are blocked here.
+        All other fields (temperatures, times, colors, etc.) can be updated safely.
+
+        Args:
+            **kwargs: Field names and their new values.
+
+        Returns:
+            A new :class:`TigerTag` instance with the requested fields updated.
+            The original instance is unchanged.
+
+        Raises:
+            ValueError: If any protected or unknown field is requested.
+
+        Example::
+
+            updated = tag.patch(nozzle_temp_min=200, nozzle_temp_max=240)
+        """
+        protected = set(kwargs.keys()) & _PROTECTED_FIELDS
+        if protected:
+            raise ValueError(
+                f"Cannot modify protected field(s): {', '.join(sorted(protected))}. "
+                "These fields are covered by the ECDSA signature and must never change."
+            )
+        valid = {f.name for f in _dc_fields(self)} - _PROTECTED_FIELDS
+        unknown = set(kwargs.keys()) - valid
+        if unknown:
+            raise ValueError(
+                f"Unknown field(s): {', '.join(sorted(unknown))}. "
+                f"Valid patchable fields: {', '.join(sorted(valid))}"
+            )
+        return _dc_replace(self, **kwargs)
+
+    def patch_from_api(
+        self,
+        api_data: Optional[Dict[str, Any]] = None,
+        db: Optional[TigerTagDB] = None,
+    ) -> Tuple["TigerTag", List[ApiDiff]]:
+        """
+        Apply API-sourced field updates surgically, without touching the signature.
+
+        Fetches the current product data from the TigerTag+ cloud API (or uses
+        *api_data* if supplied), computes the diff, and patches all numeric fields
+        that differ (temperatures, drying parameters, weight).
+
+        Fields that cannot be automatically mapped (e.g. material label, brand name)
+        are reported in the returned diff list but are **not** patched — those require
+        re-programming the chip with manufacturer tooling.
+
+        Args:
+            api_data : Pre-fetched API dict. If ``None``, calls :meth:`raw_api`.
+            db       : Override the database used for label resolution.
+
+        Returns:
+            ``(updated_tag, applied_diffs)`` — a patched :class:`TigerTag` and the
+            list of :class:`ApiDiff` entries that were applied.
+            If the tag is Maker/Init or no patchable diffs are found, returns
+            ``(self, [])``.
+
+        Raises:
+            RuntimeError: If the network request fails (only when *api_data* is ``None``).
+
+        Example::
+
+            new_tag, applied = tag.patch_from_api()
+            if applied:
+                print(f"Updated {len(applied)} field(s). Write new_tag.to_bytes() to chip.")
+        """
+        if self.is_maker or self.is_init:
+            return self, []
+
+        _db  = db or self.db
+        data = api_data if api_data is not None else self.raw_api()
+        if not data:
+            return self, []
+
+        diffs = self.diff_api(api_data=data, db=_db)
+        if not diffs:
+            return self, []
+
+        # Numeric and color fields can be auto-patched without touching the signature.
+        # Label-based fields (material, brand, aspect…) require chip re-programming.
+        _FIELD_MAP: Dict[str, str] = {
+            "nozzle_min": "nozzle_temp_min",
+            "nozzle_max": "nozzle_temp_max",
+            "bed_min":    "bed_temp_min",
+            "bed_max":    "bed_temp_max",
+            "dry_temp":   "dry_temp",
+            "dry_time":   "dry_time",
+            "measure_g":  "measure",
+        }
+
+        def _hex_to_rgba(hex_str: str) -> Optional[Tuple[int, int, int, int]]:
+            h = hex_str.lstrip("#")
+            try:
+                if len(h) == 8:
+                    return int(h[0:2],16), int(h[2:4],16), int(h[4:6],16), int(h[6:8],16)
+                if len(h) == 6:
+                    return int(h[0:2],16), int(h[2:4],16), int(h[4:6],16), 255
+            except ValueError:
+                pass
+            return None
+
+        updates: Dict[str, Any] = {}
+        applied: List[ApiDiff]  = []
+        for diff in diffs:
+            # Color fields — unpack hex → individual RGBA/RGB channel fields
+            if diff.field in ("color_1", "color_2", "color_3"):
+                rgba = _hex_to_rgba(str(diff.api_value))
+                if rgba:
+                    r, g, b, a = rgba
+                    if diff.field == "color_1":
+                        updates.update(color1_r=r, color1_g=g, color1_b=b, color1_a=a)
+                    elif diff.field == "color_2":
+                        updates.update(color2_r=r, color2_g=g, color2_b=b)
+                    else:
+                        updates.update(color3_r=r, color3_g=g, color3_b=b)
+                    applied.append(diff)
+                continue
+
+            tag_field = _FIELD_MAP.get(diff.field)
+            if tag_field:
+                updates[tag_field] = int(diff.api_value)
+                applied.append(diff)
+
+        if not updates:
+            return self, []
+
+        return self.patch(**updates), applied
 
     def sync_db(self, db_path: Optional[Path] = None, force: bool = False) -> List[str]:
         """
@@ -269,9 +667,12 @@ class TigerTag:
         Args:
             data : Accepted sizes:
                    180 bytes — full chip dump (pages 0-44):
-                               UID auto-extracted from system pages.
-                   144 bytes — user data + signature (pages 0x04-0x27):
-                               UID not available, signature cannot be verified.
+                               UID auto-extracted from system pages (pages 0-1).
+                               Signature is verifiable.
+                   144 bytes — partial dump (pages 0x04-0x27, no system pages):
+                               UID not available → signature cannot be verified.
+                               Use from_pages(data, uid=uid) instead to get
+                               full verification with an externally supplied UID.
                     80 bytes — user data only (pages 0x04-0x17).
             db   : Optional pre-loaded TigerTagDB instance.
 
@@ -369,6 +770,219 @@ class TigerTag:
         tag._db = db
         return tag
 
+    # ── CRUD constructors ──────────────────────────────────────────────────────
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        product_id: int = MAKER_PRODUCT_ID,
+        uid: Optional[bytes] = None,
+        # Material
+        id_material: int = 0,
+        id_aspect_1: int = 0,
+        id_aspect_2: int = 0,
+        id_type:     int = 0,
+        id_diameter: int = 0,
+        id_brand:    int = 0,
+        # Colors
+        color1_r: int = 0, color1_g: int = 0, color1_b: int = 0, color1_a: int = 255,
+        color2_r: int = 0, color2_g: int = 0, color2_b: int = 0,
+        color3_r: int = 0, color3_g: int = 0, color3_b: int = 0,
+        # Quantity
+        measure:   int = 0,
+        id_unit:   int = 0,
+        # Temperatures
+        nozzle_temp_min: int = 0,
+        nozzle_temp_max: int = 0,
+        dry_temp:        int = 0,
+        dry_time:        int = 0,
+        bed_temp_min:    int = 0,
+        bed_temp_max:    int = 0,
+        # Traceability
+        timestamp:      Optional[int] = None,
+        custom_message: str = "",
+        # HueForge
+        td_raw: int = 0,
+        db: Optional[TigerTagDB] = None,
+    ) -> "TigerTag":
+        """
+        Create a new :class:`TigerTag` from scratch and serialize it with
+        :meth:`to_bytes` to write directly to a blank NDEF chip.
+
+        No Init step required — the chip can go from blank NDEF to a fully
+        programmed TigerTag or TigerTag+ in one write.
+
+        The protocol version (``id_tigertag``) is inferred automatically:
+
+        * ``product_id`` omitted or ``0xFFFFFFFF`` → **TigerTag** (Maker / offline)
+        * ``product_id`` is a real cloud ID               → **TigerTag+**
+
+        Args:
+            product_id      : Cloud product ID for TigerTag+, or ``MAKER_PRODUCT_ID``
+                              (default) for an offline Maker tag.
+            uid             : 7-byte chip UID, if known.
+            id_material     : Material ID from ``id_material.json``.
+            id_aspect_1     : Primary aspect ID from ``id_aspect.json``.
+            id_aspect_2     : Secondary aspect ID from ``id_aspect.json``.
+            id_type         : Type ID from ``id_type.json``.
+            id_diameter     : Diameter ID from ``id_diameter.json``.
+            id_brand        : Brand ID from ``id_brand.json``.
+            color1_r/g/b/a  : Primary colour (RGBA, 0–255).
+            color2_r/g/b    : Secondary colour.
+            color3_r/g/b    : Tertiary colour.
+            measure         : Initial quantity at manufacturing.
+            id_unit         : Unit ID from ``id_measure_unit.json``.
+            nozzle_temp_min : Minimum nozzle temperature (°C).
+            nozzle_temp_max : Maximum nozzle temperature (°C).
+            dry_temp        : Drying temperature (°C).
+            dry_time        : Drying time (hours).
+            bed_temp_min    : Minimum bed temperature (°C).
+            bed_temp_max    : Maximum bed temperature (°C).
+            timestamp       : Seconds since 2000-01-01 UTC. Defaults to *now*.
+            custom_message  : Free-text traceability field (max 28 bytes UTF-8).
+            td_raw          : HueForge TD × 10 (0 = undefined).
+            db              : Optional pre-loaded :class:`TigerTagDB`.
+
+        Returns:
+            A new :class:`TigerTag` instance ready for :meth:`to_bytes`.
+
+        Example::
+
+            tag = TigerTag.create(
+                product_id=10,          # TigerTag+
+                id_material=38219,      # PLA
+                id_brand=50604,         # Polymaker
+                nozzle_temp_min=190, nozzle_temp_max=240,
+                bed_temp_min=35, bed_temp_max=65,
+                dry_temp=45, dry_time=6,
+                measure=1000, id_unit=21,
+                color1_r=137, color1_g=217, color1_b=217,
+            )
+            chip.write_pages(4, tag.to_bytes())
+        """
+        if product_id != MAKER_PRODUCT_ID and product_id != INIT_PRODUCT_ID:
+            id_tigertag = ID_TIGERTAG_PLUS
+        else:
+            id_tigertag  = ID_TIGERTAG
+            product_id   = MAKER_PRODUCT_ID
+
+        if timestamp is None:
+            timestamp = max(0, int(
+                datetime.now(tz=timezone.utc).timestamp()
+                - _TIGERTAG_EPOCH.timestamp()
+            ))
+
+        tag = cls(
+            id_tigertag       = id_tigertag,
+            id_product        = product_id,
+            id_material       = id_material,
+            id_aspect_1       = id_aspect_1,
+            id_aspect_2       = id_aspect_2,
+            id_type           = id_type,
+            id_diameter       = id_diameter,
+            id_brand          = id_brand,
+            color1_r          = color1_r,
+            color1_g          = color1_g,
+            color1_b          = color1_b,
+            color1_a          = color1_a,
+            color2_r          = color2_r,
+            color2_g          = color2_g,
+            color2_b          = color2_b,
+            color3_r          = color3_r,
+            color3_g          = color3_g,
+            color3_b          = color3_b,
+            measure           = measure,
+            id_unit           = id_unit,
+            measure_available = measure,
+            nozzle_temp_min   = nozzle_temp_min,
+            nozzle_temp_max   = nozzle_temp_max,
+            dry_temp          = dry_temp,
+            dry_time          = dry_time,
+            bed_temp_min      = bed_temp_min,
+            bed_temp_max      = bed_temp_max,
+            timestamp         = timestamp,
+            custom_message    = custom_message,
+            td_raw            = td_raw,
+            uid               = uid,
+            _db               = db,
+        )
+        return tag
+
+    @classmethod
+    def as_init(cls, uid: Optional[bytes] = None) -> "TigerTag":
+        """
+        Create a TigerTag **Init** payload.
+
+        Init is a "formatting" step — it marks the chip as reserved for TigerTag
+        without programming any material data yet.  Write :meth:`to_bytes` to the
+        chip; any reader will recognise it as a blank TigerTag placeholder.
+
+        This step is optional: :meth:`create` can go directly from a blank NDEF
+        chip to a fully programmed TigerTag or TigerTag+.
+
+        Args:
+            uid : 7-byte chip UID, if known.
+
+        Returns:
+            A :class:`TigerTag` with ``id_tigertag = ID_TIGERTAG_INIT``,
+            ``id_product = 0``, and all material fields zeroed.
+
+        Example::
+
+            init_tag = TigerTag.as_init(uid=chip.uid)
+            chip.write_pages(4, init_tag.to_bytes())
+        """
+        ts = max(0, int(
+            datetime.now(tz=timezone.utc).timestamp()
+            - _TIGERTAG_EPOCH.timestamp()
+        ))
+        return cls(
+            id_tigertag       = ID_TIGERTAG_INIT,
+            id_product        = INIT_PRODUCT_ID,
+            id_material       = 0,
+            id_aspect_1       = 0,
+            id_aspect_2       = 0,
+            id_type           = 0,
+            id_diameter       = 0,
+            id_brand          = 0,
+            color1_r          = 0, color1_g = 0, color1_b = 0, color1_a = 255,
+            color2_r          = 0, color2_g = 0, color2_b = 0,
+            color3_r          = 0, color3_g = 0, color3_b = 0,
+            measure           = 0,
+            id_unit           = 0,
+            measure_available = 0,
+            nozzle_temp_min   = 0,
+            nozzle_temp_max   = 0,
+            dry_temp          = 0,
+            dry_time          = 0,
+            bed_temp_min      = 0,
+            bed_temp_max      = 0,
+            timestamp         = ts,
+            custom_message    = "",
+            td_raw            = 0,
+            uid               = uid,
+        )
+
+    @classmethod
+    def erase(cls) -> bytes:
+        """
+        Return the 80-byte payload that wipes a TigerTag chip back to blank NDEF.
+
+        Writing these bytes to pages 0x04–0x17 destroys all TigerTag data.
+        The chip becomes a plain NDEF chip with no TigerTag structure — it can
+        be reprogrammed as a new TigerTag at any time with :meth:`create`.
+
+        Returns:
+            ``bytes(80)`` — 80 zero bytes, pages 0x04–0x17.
+
+        Example::
+
+            chip.write_pages(4, TigerTag.erase())
+            # chip is now blank NDEF — no longer a TigerTag
+        """
+        return bytes(MIN_DATA_LEN)
+
     # ── Serializer ─────────────────────────────────────────────────────────────
 
     def to_bytes(self, include_signature: bool = False) -> bytes:
@@ -422,6 +1036,65 @@ class TigerTag:
             data += (self.signature_s + bytes(32))[:32]
 
         return data
+
+    def to_raw_dict(self) -> Dict[str, Any]:
+        """
+        Return protocol fields exactly as stored on the chip — no label resolution,
+        no unit conversion, no date formatting.
+
+        Field order mirrors the binary layout (TigerTag Open Source v2.1).
+        All values are raw integers, colour channels are flat (color_r/g/b/a …),
+        and the UID is a plain uppercase hex string (or None for partial dumps).
+
+        This is the canonical "source of truth" view, equivalent to what your
+        cloud inventory table stores before any SDK enrichment.
+        """
+        return {
+            # ── Header ──────────────────────────────────────────────────────
+            "id_tigertag":        self.id_tigertag,
+            "id_product":         self.id_product,
+            # ── Material IDs ────────────────────────────────────────────────
+            "id_material":        self.id_material,
+            "id_aspect1":         self.id_aspect_1,
+            "id_aspect2":         self.id_aspect_2,
+            "id_type":            self.id_type,
+            "id_diameter":        self.id_diameter,
+            "id_brand":           self.id_brand,
+            # ── Color 1 (RGBA) ───────────────────────────────────────────────
+            "color_r":            self.color1_r,
+            "color_g":            self.color1_g,
+            "color_b":            self.color1_b,
+            "color_a":            self.color1_a,
+            # ── Quantity ─────────────────────────────────────────────────────
+            "measure":            self.measure,
+            "id_unit":            self.id_unit,
+            # ── Temperatures (°C) ────────────────────────────────────────────
+            "nozzle_min":         self.nozzle_temp_min,
+            "nozzle_max":         self.nozzle_temp_max,
+            "dry_temp":           self.dry_temp,
+            "dry_time":           self.dry_time,
+            "bed_min":            self.bed_temp_min,
+            "bed_max":            self.bed_temp_max,
+            # ── Traceability ─────────────────────────────────────────────────
+            "timestamp":          self.timestamp,
+            # ── Color 2 & 3 (RGB) ────────────────────────────────────────────
+            "color_r2":           self.color2_r,
+            "color_g2":           self.color2_g,
+            "color_b2":           self.color2_b,
+            "color_r3":           self.color3_r,
+            "color_g3":           self.color3_g,
+            "color_b3":           self.color3_b,
+            # ── HueForge ─────────────────────────────────────────────────────
+            "td_raw":             self.td_raw,
+            # ── Message & stock ──────────────────────────────────────────────
+            "message":            self.custom_message,
+            "measure_available":  self.measure_available,
+            # ── Chip UID ─────────────────────────────────────────────────────
+            "uid":                self.uid_hex,
+            # ── TigerTag+ links (derived — not stored on chip) ───────────────
+            "product_page_url":   self.product_page_url,
+            "api_url":            self.api_url,
+        }
 
     # ── Validation ─────────────────────────────────────────────────────────────
 
@@ -495,7 +1168,9 @@ class TigerTag:
         if not self.uid:
             return SignatureResult(
                 SignatureResult.NO_UID,
-                "Provide a full 180-byte chip dump or use from_pages() with uid=.",
+                "UID required for signature verification. "
+                "Use from_pages(payload, uid=uid) — the NFC SDK always exposes "
+                "the UID separately. For binary dumps, use a full 180-byte dump.",
             )
 
         _db = db or self.db
@@ -555,16 +1230,18 @@ class TigerTag:
                 "label": TigerTagDB.label(_db.version(self.id_tigertag)),
             },
             "product": {
-                "id":          self.id_product,
-                "mode":        "maker" if self.is_maker else "init" if self.is_init else "cloud",
-                "description": (
+                "id":               self.id_product,
+                "mode":             "maker" if self.is_maker else "init" if self.is_init else "cloud",
+                "description":      (
                     "TigerTag Maker — all data stored on chip, no cloud dependency."
                     if self.is_maker else
                     "TigerTag Init — blank/uninitialized chip."
                     if self.is_init else
                     f"TigerTag+ — cloud product ID {self.id_product}. "
-                    "Query GET /product/get?uid=...&product_id=... for enriched data."
+                    "Query the api_url field for the full enriched product JSON."
                 ),
+                "product_page_url": self.product_page_url,
+                "api_url":          self.api_url,
             },
             "material": {
                 "id":      self.id_material,
@@ -728,21 +1405,19 @@ class TigerTag:
             + "."
         )
 
-        # Aspect / color — respect color_count from aspect DB
+        # Aspect / finish — explicit dedicated line
         finish_parts = [l for l in (aspect1_label, aspect2_label) if l not in ("Unknown", "-", "None")]
-        finish_str = " + ".join(finish_parts) if finish_parts else None
+        if finish_parts:
+            parts.append(f"Finish: {' + '.join(finish_parts)}.")
 
+        # Color — respect color_count from aspect DB
         color_parts = [f"primary {self.color1_hex}"]
         if color_count >= 2:
             color_parts.append(f"secondary {self.color2_hex}")
         if color_count >= 3:
             color_parts.append(f"tertiary {self.color3_hex}")
 
-        parts.append(
-            "Color: " + ", ".join(color_parts)
-            + (f" ({finish_str})" if finish_str else "")
-            + "."
-        )
+        parts.append("Color: " + ", ".join(color_parts) + ".")
 
         # Temperatures from chip
         parts.append(
@@ -777,6 +1452,13 @@ class TigerTag:
             parts.append(f"Custom message on chip: \"{self.custom_message}\".")
         if self.uid_hex:
             parts.append(f"Chip UID: {self.uid_hex}.")
+
+        # TigerTag+ links
+        if self.product_page_url:
+            parts.append(
+                f"Product page: {self.product_page_url} — "
+                f"API JSON: {self.api_url}"
+            )
 
         # Authentication
         if self.is_signed:
@@ -818,6 +1500,11 @@ class TigerTag:
             f"│  Version      {TigerTagDB.label(_db.version(self.id_tigertag))} (0x{self.id_tigertag:08X})\n"
             f"│  Product      {'TigerTag Maker' if self.is_maker else 'TigerTag Init' if self.is_init else f'TigerTag+ (cloud #{self.id_product})'}\n"
             f"│  UID          {self.uid_hex or '— (partial dump)'}\n"
+            + (
+                f"│  Product page {self.product_page_url}\n"
+                f"│  API JSON     {self.api_url}\n"
+                if self.product_page_url else ""
+            ) +
             f"├─ Material ────────────────────────────────────────────\n"
             f"│  Material     {TigerTagDB.label(_db.material(self.id_material))}  (id={self.id_material})\n"
             f"│  Density      {mat.get('density', '—')} g/cm³\n"

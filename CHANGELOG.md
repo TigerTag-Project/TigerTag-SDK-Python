@@ -3,6 +3,25 @@
 All notable changes to this project will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.1.0] — 2026-05-19
+
+### Added
+- `TigerTag.create()` — build a new tag from scratch with all fields
+- `TigerTag.as_init(uid)` — create a blank TigerTag Init chip ready for programming
+- `TigerTag.erase()` — return 80 zero bytes to wipe a chip back to blank NDEF
+- `tag.patch(**kwargs)` — immutable surgical field update, signature-safe (protected fields: id_tigertag, id_product, uid, signature_r/s)
+- `tag.patch_from_api()` — auto-apply cloud API values to chip fields; returns patched tag + applied diffs
+- `tag.diff_api()` — compare all chip fields vs TigerTag+ cloud API; covers nozzle, bed, drying, type, material, brand, diameter, aspects, colors, quantity, unit
+- `tag.raw_api()` — fetch live TigerTag+ cloud product data (requires requests)
+- `ApiDiff` namedtuple — (field, chip_value, api_value) — exported from main package
+- `ID_TIGERTAG`, `ID_TIGERTAG_PLUS`, `ID_TIGERTAG_INIT`, `MAKER_PRODUCT_ID`, `INIT_PRODUCT_ID` — exported constants
+- Playground (`tools/playground.html`) — interactive 3-column browser UI for parsing, previewing and diff-checking tags
+- Dev server (`tools/server.py`) — serves playground and exposes `POST /api/diff` REST endpoint backed by the Python SDK
+
+### Fixed
+- `from_pages(144_bytes, uid=uid)` is correctly documented as verifiable — the previous README table incorrectly stated 144 bytes was "not verifiable"
+- Aspect "none" vs "none" is no longer reported as a diff in `diff_api()`
+
 ## [1.0.0] — 2026-05-18
 
 ### Added

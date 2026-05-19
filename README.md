@@ -1,3 +1,5 @@
+<img src="assets/TigerTag_Banner.png" width="100%" alt="TigerTag banner">
+
 # TigerTag Python SDK
 
 ![Python](https://img.shields.io/badge/python-3.8%2B-blue)
@@ -102,6 +104,71 @@ str(result)    # "✅ VALID" | "❌ INVALID" | "⬜ NOT SIGNED" | …
 result.to_dict()  # {"status": ..., "ok": ..., "detail": ...}
 ```
 
+### Write operations (CRUD)
+
+```python
+# Build a new tag from scratch
+tag = TigerTag.create(
+    uid=bytes.fromhex("04A1B2C3D4E5F6"),
+    id_material=38219,        # PLA
+    id_brand=19961,           # Rosa3D
+    nozzle_temp_min=195,
+    nozzle_temp_max=230,
+    color1_r=255, color1_g=0, color1_b=0, color1_a=255,
+    measure=1000, id_unit=21,
+)
+
+# Create a blank TigerTag Init chip ready for programming
+init_tag = TigerTag.as_init(uid=bytes.fromhex("04A1B2C3D4E5F6"))
+
+# Erase a chip (returns 80 zero bytes — write these to the NFC chip)
+blank = TigerTag.erase()
+
+# Immutable surgical field update (returns a new TigerTag)
+patched = tag.patch(nozzle_temp_min=200, dry_temp=55)
+
+# Apply cloud API values and get a list of what changed
+patched_tag, diffs = tag.patch_from_api()
+
+# Compare chip fields vs TigerTag+ cloud API
+diffs = tag.diff_api()
+
+# Fetch raw TigerTag+ cloud product data (requires requests)
+api_data = tag.raw_api()
+```
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `TigerTag.create(**kwargs)` | `TigerTag` | Build a new tag from scratch with all fields |
+| `TigerTag.as_init(uid)` | `TigerTag` | Create a blank TigerTag Init chip |
+| `TigerTag.erase()` | `bytes` | 80 zero bytes — write to chip to wipe back to blank NDEF |
+| `tag.patch(**kwargs)` | `TigerTag` | Immutable surgical update of any non-protected field |
+| `tag.patch_from_api(api_data, db)` | `(TigerTag, list[ApiDiff])` | Apply cloud API values to chip fields |
+| `tag.diff_api(api_data, db)` | `list[ApiDiff]` | Compare all chip fields vs TigerTag+ cloud API |
+| `tag.raw_api(db)` | `dict \| None` | Fetch live TigerTag+ cloud product data |
+
+**Protected fields** (cannot be patched, `patch()` raises `ValueError`): `id_tigertag`, `id_product`, `uid`, `signature_r`, `signature_s`.
+
+### ApiDiff
+
+`ApiDiff` is a namedtuple `(field, chip_value, api_value)` returned by `diff_api()` and `patch_from_api()`.
+
+```python
+from tigertag import ApiDiff, TigerTag
+
+tag = TigerTag.from_pages(payload, uid=uid)
+diffs = tag.diff_api()
+
+for d in diffs:
+    print(f"{d.field}: chip={d.chip_value!r} → api={d.api_value!r}")
+
+# Apply all diffs automatically
+patched_tag, applied = tag.patch_from_api()
+print(f"{len(applied)} field(s) updated from cloud")
+```
+
+Fields compared by `diff_api()`: `nozzle_min`, `nozzle_max`, `bed_min`, `bed_max`, `dry_temp`, `dry_time`, `type`, `material`, `brand`, `diameter`, `aspect_1`, `aspect_2`, `color_1`, `color_2`, `color_3`, `measure_g`, `measure_unit`.
+
 ### TigerTagDB
 
 ```python
@@ -175,13 +242,37 @@ See [`examples/integrate_nfc_sdk.py`](examples/integrate_nfc_sdk.py) for all pla
 
 ---
 
-## Accepted dump formats
+## Accepted input formats
 
-| Size | Content | UID | Signature |
-|------|---------|-----|-----------|
-| 180 bytes | Full chip dump (pages 0-44) | Auto-extracted | Verifiable |
-| 144 bytes | User data + signature (pages 0x04-0x27) | Not available | Not verifiable |
-| 80 bytes | User data only (pages 0x04-0x17) | Not available | N/A |
+### `from_pages(payload, uid)` — NFC SDK workflow (recommended)
+
+NFC SDKs always expose the UID as a dedicated property and the page data
+separately — pages 0–3 (system pages: lock bytes, capability container) are
+never part of the NDEF payload. This is the normal integration path:
+
+| Payload size | Pages | UID argument | Signature |
+|---|---|---|---|
+| 144 bytes | 0x04–0x27 (user data + ECDSA signature) | Required (7 bytes) | **Verifiable** |
+| 80 bytes | 0x04–0x17 (user data only) | Required (7 bytes) | N/A (unsigned tag) |
+
+```python
+uid     = chip.uid                      # 7 bytes, from NFC SDK
+payload = chip.read_pages(4, 39)        # 144 bytes, pages 0x04–0x27
+tag = TigerTag.from_pages(payload, uid=uid)
+print(tag.verify())                     # ✅ VALID
+```
+
+### `from_dump(data)` — binary dump workflow (debug / proxmark / ACR122U)
+
+When reading a raw dump that includes the chip system pages (pages 0–3),
+the UID can be auto-extracted. For partial dumps without system pages, the
+UID is unavailable and the signature cannot be verified.
+
+| Dump size | Content | UID | Signature |
+|---|---|---|---|
+| 180 bytes | Full chip dump (pages 0–44) | Auto-extracted from pages 0–1 | **Verifiable** |
+| 144 bytes | Partial dump (pages 0x04–0x27, no system pages) | Not available | Not verifiable |
+| 80 bytes | User data only (pages 0x04–0x17) | Not available | N/A |
 
 ---
 
@@ -197,6 +288,25 @@ The SDK ships with bundled reference databases — it works fully offline after
 5. **`tigertag --sync-only`** — CLI sync, updates bundled database in place
 
 Sources: TigerTag API → GitHub mirror (automatic fallback).
+
+---
+
+## Playground
+
+An interactive browser UI for testing and exploring TigerTag data — no NFC hardware required.
+
+```bash
+python3 tools/server.py 7432
+# then open: http://localhost:7432/tools/playground.html
+```
+
+The playground features a 3-column layout:
+
+- **Left** — input form with TigerTag / TigerTag+ / Init modes and 6 demo presets
+- **Center** — output cards: Protocol, Material, Colors & Finish, Print Settings, Quantity, Traceability, and a Cloud API card for TigerTag+ tags
+- **Right** — collapsible SDK output panel with tabs: `pretty()`, `describe()`, `verify()`, `to_raw_dict()`, `to_dict()`, `raw_api()`, `diff_api()`
+
+The playground calls `POST /api/diff` on the dev server, which runs the Python SDK server-side and returns diffs as JSON — identical to calling `tag.diff_api()` in code.
 
 ---
 
@@ -272,9 +382,10 @@ Official tools built on the same protocol:
 | Tool | Platform | Description |
 |------|----------|-------------|
 | [TigerTag Studio Manager](https://github.com/TigerTag-Project/TigerTag-Studio-Manager) | Windows / macOS / Linux | Desktop inventory manager, ACR122U integration |
-| [Tiger Scale](https://github.com/TigerTag-Project/Tiger_Scale) | ESP32 DIY | Smart scale — reads tag, weighs spool, updates `measure_available` in real time |
+| [Tiger Scale](https://github.com/TigerTag-Project/Tiger-Scale) | ESP32 DIY | Smart scale — reads tag, weighs spool, updates `measure_available` in real time |
 | [TigerTag RFID Connect (iOS)](https://apps.apple.com/fr/app/tigertag-rfid-connect/id6745437963) | iOS | Official mobile app |
 | [TigerTag RFID Connect (Android)](https://play.google.com/store/apps/details?id=com.tigertag.connect) | Android | Official mobile app |
+| [TigerTag Firebase Integration](https://github.com/TigerTag-Project/TigerTag_Firebase_Integration) | Cloud | Firebase backend integration example |
 
 Community integrations: [OpenRFID](https://github.com/suchmememanyskill/OpenRFID), [Home Assistant](https://github.com/Kenny3231/TigerTag), [Snapmaker U1 firmware](https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware).
 
