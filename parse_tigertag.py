@@ -1505,6 +1505,118 @@ class TigerTag:
 
     # ── Output ────────────────────────────────────────────────────────────────
 
+    def to_raw_dict(self) -> Dict[str, Any]:
+        """
+        Return protocol fields exactly as stored on the chip — no label resolution,
+        no unit conversion, no date formatting. Raw integers only.
+
+        This is the canonical "source of truth" view.
+        """
+        return {
+            "id_tigertag":       self.id_tigertag,
+            "id_product":        self.id_product,
+            "id_material":       self.id_material,
+            "id_aspect1":        self.id_aspect_1,
+            "id_aspect2":        self.id_aspect_2,
+            "id_type":           self.id_type,
+            "id_diameter":       self.id_diameter,
+            "id_brand":          self.id_brand,
+            "color_r":           self.color1_r,
+            "color_g":           self.color1_g,
+            "color_b":           self.color1_b,
+            "color_a":           self.color1_a,
+            "measure":           self.measure,
+            "id_unit":           self.id_unit,
+            "nozzle_min":        self.nozzle_temp_min,
+            "nozzle_max":        self.nozzle_temp_max,
+            "dry_temp":          self.dry_temp,
+            "dry_time":          self.dry_time,
+            "bed_min":           self.bed_temp_min,
+            "bed_max":           self.bed_temp_max,
+            "timestamp":         self.timestamp,
+            "color_r2":          self.color2_r,
+            "color_g2":          self.color2_g,
+            "color_b2":          self.color2_b,
+            "color_r3":          self.color3_r,
+            "color_g3":          self.color3_g,
+            "color_b3":          self.color3_b,
+            "td_raw":            self.td_raw,
+            "message":           self.custom_message,
+            "measure_available": self.measure_available,
+            "uid":               self.uid_hex,
+            "product_page_url":  self.product_page_url,
+            "api_url":           self.api_url,
+        }
+
+    def to_dict(self, db: TigerTagDB = None) -> Dict:
+        """
+        Return a fully-resolved dict (all IDs replaced by their labels + metadata).
+        Suitable for JSON serialization, API responses, or further processing.
+
+        Example:
+            import json
+            print(json.dumps(tag.to_dict(), indent=2))
+        """
+        _db   = db or self.db
+        mat   = _db.material(self.id_material) or {}
+        rec   = mat.get("recommended", {})
+        stock = self.stock_percent
+
+        return {
+            "sdk":        "tigertag-sdk-python",
+            "sdk_mode":   "offline",
+            "protocol":   "TigerTag Open Source v2.1",
+            "uid":        self.uid_hex,
+            "version": {
+                "id":    self.id_tigertag,
+                "hex":   f"0x{self.id_tigertag:08X}",
+                "label": TigerTagDB.label(_db.version(self.id_tigertag)),
+            },
+            "product": {
+                "id":   self.id_product,
+                "mode": "maker" if self.is_maker else "init" if self.is_init else "cloud",
+            },
+            "material": {
+                "id":      self.id_material,
+                "label":   TigerTagDB.label(_db.material(self.id_material)),
+                "density": mat.get("density"),
+                "filled":  mat.get("filled"),
+                "recommended": {
+                    "nozzle": {"min": rec.get("nozzleTempMin"), "max": rec.get("nozzleTempMax")},
+                    "bed":    {"min": rec.get("bedTempMin"),    "max": rec.get("bedTempMax")},
+                    "dry":    {"temp": rec.get("dryTemp"),      "time_h": rec.get("dryTime")},
+                } if rec else None,
+                "metadata": mat.get("metadata"),
+            },
+            "aspect_1": {"id": self.id_aspect_1, "label": TigerTagDB.label(_db.aspect(self.id_aspect_1))},
+            "aspect_2": {"id": self.id_aspect_2, "label": TigerTagDB.label(_db.aspect(self.id_aspect_2))},
+            "type":     {"id": self.id_type,     "label": TigerTagDB.label(_db.type_(self.id_type))},
+            "diameter": {"id": self.id_diameter, "label": TigerTagDB.label(_db.diameter(self.id_diameter))},
+            "brand":    {"id": self.id_brand,    "label": TigerTagDB.label(_db.brand(self.id_brand))},
+            "colors": {
+                "primary":   {"hex": self.color1_hex, "rgba": [self.color1_r, self.color1_g, self.color1_b, self.color1_a]},
+                "secondary": {"hex": self.color2_hex, "rgb":  [self.color2_r, self.color2_g, self.color2_b]},
+                "tertiary":  {"hex": self.color3_hex, "rgb":  [self.color3_r, self.color3_g, self.color3_b]},
+            },
+            "hueforge_td": self.td_value if self.td_raw != 0 else None,
+            "unit": {"id": self.id_unit, "label": TigerTagDB.label(_db.unit(self.id_unit))},
+            "measure": {
+                "initial":   self.measure,
+                "available": self.measure_available,
+                "percent":   stock,
+            },
+            "temperatures": {
+                "nozzle": {"min": self.nozzle_temp_min, "max": self.nozzle_temp_max},
+                "bed":    {"min": self.bed_temp_min,    "max": self.bed_temp_max},
+                "dry":    {"temp": self.dry_temp,       "time_h": self.dry_time},
+            },
+            "timestamp":           self.timestamp,
+            "manufacturing_date":  self.manufacturing_date.isoformat(),
+            "twin_tag_pairing_id": self.timestamp,
+            "custom_message":      self.custom_message,
+            "signed":              self.is_signed,
+        }
+
     def describe(self, db: TigerTagDB = None) -> str:
         """
         Return a concise natural-language description of the tag.
@@ -1621,118 +1733,6 @@ class TigerTag:
             parts.append("Tag is not ECDSA-signed.")
 
         return " ".join(parts)
-
-    def to_raw_dict(self) -> Dict[str, Any]:
-        """
-        Return protocol fields exactly as stored on the chip — no label resolution,
-        no unit conversion, no date formatting. Raw integers only.
-
-        This is the canonical "source of truth" view.
-        """
-        return {
-            "id_tigertag":       self.id_tigertag,
-            "id_product":        self.id_product,
-            "id_material":       self.id_material,
-            "id_aspect1":        self.id_aspect_1,
-            "id_aspect2":        self.id_aspect_2,
-            "id_type":           self.id_type,
-            "id_diameter":       self.id_diameter,
-            "id_brand":          self.id_brand,
-            "color_r":           self.color1_r,
-            "color_g":           self.color1_g,
-            "color_b":           self.color1_b,
-            "color_a":           self.color1_a,
-            "measure":           self.measure,
-            "id_unit":           self.id_unit,
-            "nozzle_min":        self.nozzle_temp_min,
-            "nozzle_max":        self.nozzle_temp_max,
-            "dry_temp":          self.dry_temp,
-            "dry_time":          self.dry_time,
-            "bed_min":           self.bed_temp_min,
-            "bed_max":           self.bed_temp_max,
-            "timestamp":         self.timestamp,
-            "color_r2":          self.color2_r,
-            "color_g2":          self.color2_g,
-            "color_b2":          self.color2_b,
-            "color_r3":          self.color3_r,
-            "color_g3":          self.color3_g,
-            "color_b3":          self.color3_b,
-            "td_raw":            self.td_raw,
-            "message":           self.custom_message,
-            "measure_available": self.measure_available,
-            "uid":               self.uid_hex,
-            "product_page_url":  self.product_page_url,
-            "api_url":           self.api_url,
-        }
-
-    def to_dict(self, db: TigerTagDB = None) -> Dict:
-        """
-        Return a fully-resolved dict (all IDs replaced by their labels + metadata).
-        Suitable for JSON serialization, API responses, or further processing.
-
-        Example:
-            import json
-            print(json.dumps(tag.to_dict(), indent=2))
-        """
-        _db   = db or self.db
-        mat   = _db.material(self.id_material) or {}
-        rec   = mat.get("recommended", {})
-        stock = self.stock_percent
-
-        return {
-            "sdk":        "tigertag-sdk-python",
-            "sdk_mode":   "offline",
-            "protocol":   "TigerTag Open Source v2.1",
-            "uid":        self.uid_hex,
-            "version": {
-                "id":    self.id_tigertag,
-                "hex":   f"0x{self.id_tigertag:08X}",
-                "label": TigerTagDB.label(_db.version(self.id_tigertag)),
-            },
-            "product": {
-                "id":   self.id_product,
-                "mode": "maker" if self.is_maker else "init" if self.is_init else "cloud",
-            },
-            "material": {
-                "id":      self.id_material,
-                "label":   TigerTagDB.label(_db.material(self.id_material)),
-                "density": mat.get("density"),
-                "filled":  mat.get("filled"),
-                "recommended": {
-                    "nozzle": {"min": rec.get("nozzleTempMin"), "max": rec.get("nozzleTempMax")},
-                    "bed":    {"min": rec.get("bedTempMin"),    "max": rec.get("bedTempMax")},
-                    "dry":    {"temp": rec.get("dryTemp"),      "time_h": rec.get("dryTime")},
-                } if rec else None,
-                "metadata": mat.get("metadata"),
-            },
-            "aspect_1": {"id": self.id_aspect_1, "label": TigerTagDB.label(_db.aspect(self.id_aspect_1))},
-            "aspect_2": {"id": self.id_aspect_2, "label": TigerTagDB.label(_db.aspect(self.id_aspect_2))},
-            "type":     {"id": self.id_type,     "label": TigerTagDB.label(_db.type_(self.id_type))},
-            "diameter": {"id": self.id_diameter, "label": TigerTagDB.label(_db.diameter(self.id_diameter))},
-            "brand":    {"id": self.id_brand,    "label": TigerTagDB.label(_db.brand(self.id_brand))},
-            "colors": {
-                "primary":   {"hex": self.color1_hex, "rgba": [self.color1_r, self.color1_g, self.color1_b, self.color1_a]},
-                "secondary": {"hex": self.color2_hex, "rgb":  [self.color2_r, self.color2_g, self.color2_b]},
-                "tertiary":  {"hex": self.color3_hex, "rgb":  [self.color3_r, self.color3_g, self.color3_b]},
-            },
-            "hueforge_td": self.td_value if self.td_raw != 0 else None,
-            "unit": {"id": self.id_unit, "label": TigerTagDB.label(_db.unit(self.id_unit))},
-            "measure": {
-                "initial":   self.measure,
-                "available": self.measure_available,
-                "percent":   stock,
-            },
-            "temperatures": {
-                "nozzle": {"min": self.nozzle_temp_min, "max": self.nozzle_temp_max},
-                "bed":    {"min": self.bed_temp_min,    "max": self.bed_temp_max},
-                "dry":    {"temp": self.dry_temp,       "time_h": self.dry_time},
-            },
-            "timestamp":           self.timestamp,
-            "manufacturing_date":  self.manufacturing_date.isoformat(),
-            "twin_tag_pairing_id": self.timestamp,
-            "custom_message":      self.custom_message,
-            "signed":              self.is_signed,
-        }
 
     def pretty(self, db: TigerTagDB = None, sig_result: SignatureResult = None) -> str:
         """
