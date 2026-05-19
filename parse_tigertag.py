@@ -1505,6 +1505,123 @@ class TigerTag:
 
     # ── Output ────────────────────────────────────────────────────────────────
 
+    def describe(self, db: TigerTagDB = None) -> str:
+        """
+        Return a concise natural-language description of the tag.
+
+        Designed for injection into LLM prompts. Contains all material data
+        in plain English, without protocol jargon.
+
+        Args:
+            db : Optional pre-loaded TigerTagDB. Uses self.db by default.
+
+        Returns:
+            A single paragraph (no newlines) describing the tag content.
+
+        Example:
+            prompt = f"Given this material: {tag.describe()}\\nWhat nozzle temp should I use?"
+        """
+        _db  = db or self.db
+        mat  = _db.material(self.id_material) or {}
+        rec  = mat.get("recommended", {})
+
+        material = TigerTagDB.label(_db.material(self.id_material))
+        type_    = TigerTagDB.label(_db.type_(self.id_type))
+        diameter = TigerTagDB.label(_db.diameter(self.id_diameter))
+        brand    = TigerTagDB.label(_db.brand(self.id_brand))
+        unit     = TigerTagDB.label(_db.unit(self.id_unit))
+        density  = mat.get("density")
+        stock    = self.stock_percent
+
+        # Check aspect_2 first for multi-color mode (Bicolor/Tricolor/Rainbow),
+        # then fall back to aspect_1. color_count drives how many colors are active.
+        asp2_entry  = _db.aspect(self.id_aspect_2)
+        asp1_entry  = _db.aspect(self.id_aspect_1)
+        color_count = 1
+        if asp2_entry and asp2_entry.get("color_count", 1) > 1:
+            color_count = asp2_entry["color_count"]
+        elif asp1_entry and asp1_entry.get("color_count", 1) > 1:
+            color_count = asp1_entry["color_count"]
+
+        aspect1_label = TigerTagDB.label(asp1_entry)
+        aspect2_label = TigerTagDB.label(asp2_entry)
+
+        parts: List[str] = []
+
+        # Identity
+        parts.append(
+            f"TigerTag RFID chip read successfully."
+            f" Material: {material} {type_}"
+            + (f" ({diameter}mm diameter)" if diameter not in ("Unknown", "-") else "")
+            + (f", density {density} g/cm³" if density else "")
+            + (f", by {brand}" if brand not in ("Unknown", "-") else "")
+            + "."
+        )
+
+        # Aspect / finish
+        finish_parts = [l for l in (aspect1_label, aspect2_label) if l not in ("Unknown", "-", "None")]
+        if finish_parts:
+            parts.append(f"Finish: {' + '.join(finish_parts)}.")
+
+        # Color — respect color_count from aspect DB
+        color_parts = [f"primary {self.color1_hex}"]
+        if color_count >= 2:
+            color_parts.append(f"secondary {self.color2_hex}")
+        if color_count >= 3:
+            color_parts.append(f"tertiary {self.color3_hex}")
+        parts.append("Color: " + ", ".join(color_parts) + ".")
+
+        # Temperatures from chip
+        parts.append(
+            f"Print settings (on chip): nozzle {self.nozzle_temp_min}–{self.nozzle_temp_max}°C,"
+            f" bed {self.bed_temp_min}–{self.bed_temp_max}°C,"
+            f" drying {self.dry_temp}°C for {self.dry_time}h."
+        )
+
+        # DB-recommended temps (if available)
+        if rec.get("nozzleTempMin") is not None:
+            parts.append(
+                f"Database recommended settings: nozzle {rec['nozzleTempMin']}–{rec['nozzleTempMax']}°C,"
+                f" bed {rec.get('bedTempMin', '?')}–{rec.get('bedTempMax', '?')}°C,"
+                f" drying {rec.get('dryTemp', '?')}°C for {rec.get('dryTime', '?')}h."
+            )
+
+        # Quantity
+        if self.measure > 0:
+            parts.append(
+                f"Quantity: {self.measure_available} {unit} remaining"
+                f" out of {self.measure} {unit} initial"
+                + (f" ({stock}%)." if stock is not None else ".")
+            )
+
+        # HueForge
+        if self.td_raw != 0:
+            parts.append(f"HueForge TD: {self.td_value:.1f}.")
+
+        # Traceability
+        parts.append(f"Manufactured: {self.manufacturing_date.strftime('%Y-%m-%d')}.")
+        if self.custom_message:
+            parts.append(f"Custom message on chip: \"{self.custom_message}\".")
+        if self.uid_hex:
+            parts.append(f"Chip UID: {self.uid_hex}.")
+
+        # TigerTag+ links
+        if self.product_page_url:
+            parts.append(
+                f"Product page: {self.product_page_url} — "
+                f"API JSON: {self.api_url}"
+            )
+
+        # Authentication
+        if self.is_signed:
+            parts.append(
+                "Tag carries an ECDSA-P256 signature — call tag.verify() to confirm authenticity."
+            )
+        else:
+            parts.append("Tag is not ECDSA-signed.")
+
+        return " ".join(parts)
+
     def to_raw_dict(self) -> Dict[str, Any]:
         """
         Return protocol fields exactly as stored on the chip — no label resolution,
