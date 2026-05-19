@@ -3,6 +3,7 @@
 # TigerTag Python SDK
 
 [![PyPI](https://img.shields.io/pypi/v/tigertag?color=blue)](https://pypi.org/project/tigertag/)
+[![Tests](https://github.com/TigerTag-Project/TigerTag-SDK-Python/actions/workflows/test.yml/badge.svg)](https://github.com/TigerTag-Project/TigerTag-SDK-Python/actions/workflows/test.yml)
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue?logo=python&logoColor=white)](https://pypi.org/project/tigertag/)
 [![License: GPLv3](https://img.shields.io/badge/license-GPLv3-green)](LICENSE.md)
 [![Protocol](https://img.shields.io/badge/protocol-TigerTag%20v2.1-orange)](https://github.com/TigerTag-Project/TigerTag-RFID-Guide)
