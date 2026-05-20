@@ -79,7 +79,7 @@ def main() -> None:
     signed_payload = payload + sig_r + sig_s
 
     # ── Parse and verify ───────────────────────────────────────────────────────
-    tag = TigerTag.from_pages(signed_payload, uid=uid)
+    tag = TigerTag.from_pages(uid, signed_payload)
 
     # Inject the test public key into the DB
     db = TigerTagDB(auto_sync=False)
@@ -95,7 +95,7 @@ def main() -> None:
     # ── Tamper the signature — should fail ─────────────────────────────────────
     tampered_r    = bytes([b ^ 0xFF for b in sig_r])
     tampered_payload = payload + tampered_r + sig_s
-    tampered_tag  = TigerTag.from_pages(tampered_payload, uid=uid)
+    tampered_tag  = TigerTag.from_pages(uid, tampered_payload)
     tampered_result = tampered_tag.verify(db)
 
     print(f"Tampered result:     {tampered_result}")

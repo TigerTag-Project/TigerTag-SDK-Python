@@ -355,7 +355,7 @@ def main() -> None:
             if size == 180:
                 tag = TigerTag.from_dump(payload, db=db)
             else:
-                tag = TigerTag.from_pages(payload, uid=bytes.fromhex(uid_hex), db=db)
+                tag = TigerTag.from_pages(bytes.fromhex(uid_hex), payload, db=db)
             sig = tag.verify()
             d   = tag.to_dict(db=db)
             material = d["material"]["label"]

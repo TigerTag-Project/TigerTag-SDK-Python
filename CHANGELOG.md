@@ -19,13 +19,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Dev server (`tools/server.py`) — serves playground and exposes `POST /api/diff` REST endpoint backed by the Python SDK
 
 ### Fixed
-- `from_pages(144_bytes, uid=uid)` is correctly documented as verifiable — the previous README table incorrectly stated 144 bytes was "not verifiable"
+- `from_pages(uid, 144_bytes)` is correctly documented as verifiable — the previous README table incorrectly stated 144 bytes was "not verifiable"
 - Aspect "none" vs "none" is no longer reported as a diff in `diff_api()`
 
 ## [1.0.0] — 2026-05-18
 
 ### Added
-- `TigerTag.from_pages(payload, uid)` — primary constructor for NFC SDK integration
+- `TigerTag.from_pages(uid, payload)` — primary constructor for NFC SDK integration
 - `TigerTag.from_dump(data)` — constructor for binary dumps (180B auto-extracts UID)
 - `TigerTag.from_file(path)` — convenience constructor from .bin file
 - `TigerTag.verify()` — autonomous ECDSA-P256 signature verification

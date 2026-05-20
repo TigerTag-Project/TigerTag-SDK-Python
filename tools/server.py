@@ -49,7 +49,7 @@ class PlaygroundHandler(SimpleHTTPRequestHandler):
             if payload is None:
                 raise ValueError("'payload' field is required")
 
-            tag = TigerTag.from_pages(payload, uid=uid)
+            tag = TigerTag.from_pages(uid, payload)
 
             api_data  = None
             api_error = None

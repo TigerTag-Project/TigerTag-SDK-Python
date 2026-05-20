@@ -117,26 +117,26 @@ class TestConstructors(unittest.TestCase):
     def test_from_pages_80b(self) -> None:
         from tigertag import TigerTag
         payload = _make_payload()
-        tag = TigerTag.from_pages(payload, uid=self._uid())
+        tag = TigerTag.from_pages(self._uid(), payload)
         self.assertEqual(tag.id_material, 38219)
         self.assertEqual(tag.uid, self._uid())
 
     def test_from_pages_144b(self) -> None:
         from tigertag import TigerTag
         payload = _make_payload(include_sig=True)
-        tag = TigerTag.from_pages(payload, uid=self._uid())
+        tag = TigerTag.from_pages(self._uid(), payload)
         self.assertEqual(len(payload), 144)
         self.assertFalse(tag.is_signed)   # all-zero sig counts as unsigned
 
     def test_from_pages_invalid_size(self) -> None:
         from tigertag import TigerTag
         with self.assertRaises(ValueError):
-            TigerTag.from_pages(bytes(50), uid=self._uid())
+            TigerTag.from_pages(self._uid(), bytes(50))
 
     def test_from_pages_invalid_uid(self) -> None:
         from tigertag import TigerTag
         with self.assertRaises(ValueError):
-            TigerTag.from_pages(_make_payload(), uid=bytes(3))
+            TigerTag.from_pages(bytes(3), _make_payload())
 
     def test_from_dump_80b(self) -> None:
         from tigertag import TigerTag
@@ -435,7 +435,7 @@ class TestECDSARoundTrip(unittest.TestCase):
         signed_payload = payload + sig_r + sig_s
         self.assertEqual(len(signed_payload), 144)
 
-        tag = TigerTag.from_pages(signed_payload, uid=uid)
+        tag = TigerTag.from_pages(uid, signed_payload)
         self.assertTrue(tag.is_signed)
 
         # Inject public key into a temporary DB backed by real bundled files

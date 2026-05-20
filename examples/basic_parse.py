@@ -72,7 +72,7 @@ def main() -> None:
     uid     = bytes.fromhex("04A1B2C3D4E5F6")  # illustrative 7-byte UID
     payload = _make_rosa3d_red_pla()
 
-    tag = TigerTag.from_pages(payload, uid=uid)
+    tag = TigerTag.from_pages(uid, payload)
 
     # Human-readable
     print(tag.pretty())

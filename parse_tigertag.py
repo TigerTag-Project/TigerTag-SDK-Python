@@ -585,7 +585,7 @@ class TigerTag:
         chip.write_pages(4, tag.to_bytes())
 
     Read:
-        tag = TigerTag.from_pages(payload, uid=uid)
+        tag = TigerTag.from_pages(uid, payload)
         tag = TigerTag.from_dump(data)
         tag = TigerTag.from_file("dump.bin")
 
@@ -1044,7 +1044,7 @@ class TigerTag:
     # ── Constructors ──────────────────────────────────────────────────────────
 
     @classmethod
-    def from_pages(cls, payload: bytes, uid: bytes, db: TigerTagDB = None) -> "TigerTag":
+    def from_pages(cls, uid: bytes, payload: bytes, db: TigerTagDB = None) -> "TigerTag":
         """
         Parse a TigerTag from NFC SDK native output.  ← PRIMARY METHOD
 
@@ -1063,7 +1063,7 @@ class TigerTag:
             TigerTag with .uid set and .verify() fully operational.
 
         Example:
-            tag = TigerTag.from_pages(payload, uid=uid)
+            tag = TigerTag.from_pages(uid, payload)
             result = tag.verify()  # ✅ fully autonomous
         """
         if len(payload) not in (MIN_DATA_LEN, FULL_DATA_LEN):
@@ -1469,7 +1469,7 @@ class TigerTag:
         if not self.uid:
             return SignatureResult(
                 SignatureResult.NO_UID,
-                "Provide a full 180-byte chip dump or use from_pages(payload, uid=uid).",
+                "Provide a full 180-byte chip dump or use from_pages(uid, payload).",
             )
 
         _db = db or self.db

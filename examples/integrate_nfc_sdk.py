@@ -42,7 +42,7 @@ from tigertag import TigerTag
 #   mifare.close()
 #
 #   // In Python bridge / Kotlin interop:
-#   tag = TigerTag.from_pages(bytes(payload), uid=bytes(uid))
+#   tag = TigerTag.from_pages(bytes(uid), bytes(payload))
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -64,7 +64,7 @@ from tigertag import TigerTag
 #               }
 #           }
 #           // Bridge to Python:
-#           tag = TigerTag.from_pages(bytes(payload), uid=bytes(uid))
+#           tag = TigerTag.from_pages(bytes(uid), bytes(payload))
 #       }
 #   }
 
@@ -88,7 +88,7 @@ from tigertag import TigerTag
 #   await FlutterNfcKit.finish();
 #
 #   // Python side (via platform channel or WASM bridge):
-#   tag = TigerTag.from_pages(bytes(payload), uid=bytes(uid))
+#   tag = TigerTag.from_pages(bytes(uid), bytes(payload))
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -102,7 +102,7 @@ from tigertag import TigerTag
 #       payload = tag.read(4, 36)          # read 36 pages starting at page 4
 #       # Each nfcpy read() returns 4 bytes per page
 #       # 36 pages × 4 bytes = 144 bytes
-#       tt = TigerTag.from_pages(payload, uid=uid)
+#       tt = TigerTag.from_pages(uid, payload)
 #       print(tt.pretty())
 #       return True
 #
@@ -166,7 +166,7 @@ def main() -> None:
     print(f"  Payload size: {len(payload)} bytes")
     print()
 
-    tag = TigerTag.from_pages(payload, uid=uid)
+    tag = TigerTag.from_pages(uid, payload)
     print(tag.pretty())
 
 

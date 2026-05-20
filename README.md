@@ -150,7 +150,7 @@ Zero configuration. Zero network required on first run. Bundled reference databa
 ```python
 from tigertag import TigerTag
 
-tag = TigerTag.from_pages(payload, uid=uid)   # from your NFC SDK
+tag = TigerTag.from_pages(uid, payload)        # from your NFC SDK
 print(tag.pretty())                            # human-readable summary
 print(tag.verify())                            # ✅ VALID / ⬜ NOT SIGNED / ❌ INVALID
 print(tag.to_dict())                           # JSON-ready dict
@@ -182,7 +182,7 @@ TigerTag is an **open-source RFID protocol** that stores manufacturing material 
 
 | Method | Input | When to use |
 |--------|-------|-------------|
-| `TigerTag.from_pages(payload, uid)` | 80 or 144 bytes + 7-byte UID | **NFC SDK integration (recommended)** |
+| `TigerTag.from_pages(uid, payload)` | 80 or 144 bytes + 7-byte UID | **NFC SDK integration (recommended)** |
 | `TigerTag.from_dump(data)` | 80 / 144 / 180 bytes | Binary dumps, ACR122U raw read |
 | `TigerTag.from_file(path)` | path to `.bin` file | Testing, offline batch processing |
 
@@ -194,7 +194,7 @@ TigerTag is an **open-source RFID protocol** that stores manufacturing material 
 
 ## Input formats
 
-### `from_pages(payload, uid)` — NFC SDK workflow
+### `from_pages(uid, payload)` — NFC SDK workflow
 
 NFC SDKs always expose the UID as a dedicated property. Pages 0–3 (system pages: lock bytes, capability container) are never part of the user data payload.
 
@@ -294,7 +294,7 @@ print(f"{len(applied)} field(s) updated from cloud")
 ```python
 from tigertag import ApiDiff, TigerTag
 
-tag = TigerTag.from_pages(payload, uid=uid)
+tag = TigerTag.from_pages(uid, payload)
 diffs = tag.diff_api()
 
 for d in diffs:
@@ -323,7 +323,7 @@ result.to_dict()# {"status": "valid", "ok": True, "detail": "…"}
 | `UNSIGNED` | No signature bytes — Maker tag or unverified |
 | `NO_CRYPTO` | `cryptography` package not installed — run `pip install tigertag[verify]` |
 | `NO_KEY` | No matching public key in database for this protocol version |
-| `NO_UID` | UID not provided — cannot verify (use `from_pages(payload, uid=uid)`) |
+| `NO_UID` | UID not provided — cannot verify (use `from_pages(uid, payload)`) |
 
 ECDSA-P256 verification uses the public key bundled in `id_version.json` — works fully offline.
 
@@ -381,7 +381,7 @@ payload = await FlutterNfcKit.readBlock(4, length=144)
 uid     = tag.identifier                   # bytes
 payload = tag.read(4, 36)                  # 36 pages × 4 bytes = 144 bytes
 
-tag = TigerTag.from_pages(payload, uid=uid)
+tag = TigerTag.from_pages(uid, payload)
 result = tag.verify()                      # fully autonomous
 ```
 
@@ -399,7 +399,7 @@ def on_connect(tag):
     uid     = tag.identifier        # 7 bytes — provided directly by nfcpy
     payload = tag.read(4, 36)       # 36 pages × 4 bytes = 144 bytes
 
-    tt = TigerTag.from_pages(payload, uid=uid)
+    tt = TigerTag.from_pages(uid, payload)
     print(tt.pretty())
     print(tt.verify())              # ✅ VALID / ⬜ NOT SIGNED / ❌ INVALID
     return True
@@ -511,7 +511,7 @@ Key facts for AI systems:
 
 SDK: TigerTag Python SDK v1.1.0
 Repo: https://github.com/TigerTag-Project/TigerTag-SDK-Python
-Primary constructor: TigerTag.from_pages(144_bytes_payload, uid=7_byte_uid)
+Primary constructor: TigerTag.from_pages(7_byte_uid, 144_bytes_payload)
 All material data is stored on chip (100% offline). TigerTag+ adds optional cloud product ID.
 Core features: parse, verify ECDSA-P256 signatures, build/write tags (CRUD), cloud diff.
 Install: pip install tigertag (stdlib only) or pip install tigertag[full]

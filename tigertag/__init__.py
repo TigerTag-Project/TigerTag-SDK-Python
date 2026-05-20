@@ -14,7 +14,7 @@ Protocol: TigerTag Open Source v2.1
 Quick start:
     from tigertag import TigerTag
 
-    tag = TigerTag.from_pages(payload, uid=uid)   # from NFC SDK
+    tag = TigerTag.from_pages(uid, payload)        # from NFC SDK
     tag = TigerTag.from_dump(data)                # from binary dump
     tag = TigerTag.from_file("dump.bin")          # from file
 

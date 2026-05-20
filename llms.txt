@@ -117,7 +117,7 @@ These databases are bundled in the package and always available offline.
 
 Three constructors — pick based on your input source:
 
-1. TigerTag.from_pages(payload: bytes, uid: bytes, db=None) -> TigerTag
+1. TigerTag.from_pages(uid: bytes, payload: bytes, db=None) -> TigerTag
    PRIMARY. Use with any NFC reader SDK (ACR122U/nfcpy, Android NfcA, iOS CoreNFC,
    Flutter flutter_nfc_kit, Arduino MFRC522).
    - payload : 80 or 144 bytes — pages 0x04 to 0x27 from the chip
@@ -347,7 +347,7 @@ tag.timestamp is BOTH:
     def on_connect(tag):
         uid     = tag.identifier        # 7 bytes — nfcpy provides this natively
         payload = tag.read(4, 36)       # 144 bytes (pages 0x04-0x27)
-        tt = TigerTag.from_pages(payload, uid=uid)
+        tt = TigerTag.from_pages(uid, payload)
         print(tt.describe())            # natural language — good for LLM context
         print(tt.verify())              # authentication result
         return True
@@ -387,7 +387,7 @@ tag.timestamp is BOTH:
     ) + b"Starter Red".ljust(28, b"\x00") + bytes([0x00, 0x03, 0xE8, 0x00])
 
     uid = bytes.fromhex("04A1B2C3D4E5F6")
-    tag = TigerTag.from_pages(payload, uid=uid)
+    tag = TigerTag.from_pages(uid, payload)
     print(tag.describe())
     # → "TigerTag RFID chip read successfully. Material: PLA Filament (1.75mm diameter),
     #    density 1.24 g/cm³, by Rosa3D. Color: primary #FF0000 (Basic). Print settings
@@ -398,7 +398,7 @@ tag.timestamp is BOTH:
 
 Pattern 1 — inject tag data into a prompt:
 
-    tag = TigerTag.from_pages(payload, uid=uid)
+    tag = TigerTag.from_pages(uid, payload)
     prompt = f"""
     You are a 3D printing assistant.
     Material data from the RFID chip on this spool:

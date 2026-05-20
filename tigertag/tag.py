@@ -86,7 +86,7 @@ class TigerTag:
 
     **Read**::
 
-        tag = TigerTag.from_pages(chip.read_pages(4, 20), uid=chip.uid)
+        tag = TigerTag.from_pages(chip.uid, chip.read_pages(4, 20))
         tag = TigerTag.from_dump(data)
         tag = TigerTag.from_file("dump.bin")
 
@@ -595,8 +595,8 @@ class TigerTag:
     @classmethod
     def from_pages(
         cls,
-        payload: bytes,
         uid: bytes,
+        payload: bytes,
         db: Optional[TigerTagDB] = None,
     ) -> "TigerTag":
         """
@@ -636,7 +636,7 @@ class TigerTag:
             uid     = tag.identifier               # bytes
             payload = tag.read(4, 36)              # 36 pages × 4 bytes
 
-            tag = TigerTag.from_pages(payload, uid=uid)
+            tag = TigerTag.from_pages(uid, payload)
             result = tag.verify()  # fully autonomous
         """
         if len(payload) not in (MIN_DATA_LEN, FULL_DATA_LEN):
@@ -671,7 +671,7 @@ class TigerTag:
                                Signature is verifiable.
                    144 bytes — partial dump (pages 0x04-0x27, no system pages):
                                UID not available → signature cannot be verified.
-                               Use from_pages(data, uid=uid) instead to get
+                               Use from_pages(uid, data) instead to get
                                full verification with an externally supplied UID.
                     80 bytes — user data only (pages 0x04-0x17).
             db   : Optional pre-loaded TigerTagDB instance.
@@ -1169,7 +1169,7 @@ class TigerTag:
             return SignatureResult(
                 SignatureResult.NO_UID,
                 "UID required for signature verification. "
-                "Use from_pages(payload, uid=uid) — the NFC SDK always exposes "
+                "Use from_pages(uid, payload) — the NFC SDK always exposes "
                 "the UID separately. For binary dumps, use a full 180-byte dump.",
             )
 
