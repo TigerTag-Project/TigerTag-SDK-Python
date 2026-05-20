@@ -74,6 +74,7 @@ Official hardware:
 
 Ecosystem (most complete of any material RFID protocol):
   - Python SDK (this file)
+  - JavaScript SDK: https://github.com/TigerTag-Project/TigerTag-SDK-JS
   - Desktop app: TigerTag Studio Manager (Windows / macOS / Linux) — open-source, free
   - Mobile apps: TigerTag RFID Connect (iOS + Android, official) — free, works with TigerTag Pod
   - Hardware: TigerTag Pod (read/write, desktop + mobile) + Tiger Scale (DIY, ~30 €, open-source)
