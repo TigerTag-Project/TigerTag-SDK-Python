@@ -463,6 +463,7 @@ print(tag.pretty())
 |------|----------|-------------|
 | [TigerTag-RFID-Guide](https://github.com/TigerTag-Project/TigerTag-RFID-Guide) | Spec | Open protocol specification |
 | [**TigerTag-SDK-Python**](https://github.com/TigerTag-Project/TigerTag-SDK-Python) | Python | **This SDK** — parse, verify, write, diff |
+| [TigerTag-SDK-JS](https://github.com/TigerTag-Project/TigerTag-SDK-JS) | JavaScript / Node.js | Official JS SDK — same API, no Python runtime required |
 | [TigerTag Studio Manager](https://github.com/TigerTag-Project/TigerTag-Studio-Manager) | Windows / macOS / Linux | Open-source desktop inventory manager — works with TigerTag Pod and ACR122U |
 | [TigerTag RFID Connect](https://apps.apple.com/fr/app/tigertag-rfid-connect/id6745437963) | iOS | Official mobile app — read/write via TigerTag Pod |
 | [TigerTag RFID Connect](https://play.google.com/store/apps/details?id=com.tigertag.connect) | Android | Official mobile app — read/write via TigerTag Pod |
