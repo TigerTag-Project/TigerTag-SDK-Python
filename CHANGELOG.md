@@ -3,6 +3,25 @@
 All notable changes to this project will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.2.0] — 2026-07-10
+
+### Changed
+- **License changed from GPLv3 to Apache-2.0.** The TigerTag protocol
+  specification is now published as an open standard: CC-BY-4.0 for the
+  specification, CC0-1.0 for the reference database, Apache-2.0 for code, with an
+  irrevocable, worldwide, royalty-free right to implement it in any product, open
+  source or proprietary. Apache-2.0 carries an express patent grant.
+  See <https://github.com/TigerTag-Project/TigerTag-RFID-Guide/blob/main/LICENSING.md>.
+- Package metadata now declares `License-Expression: Apache-2.0` (PEP 639) instead
+  of embedding the full licence text into the `License` field.
+
+### Fixed
+- `__version__` was stuck at `1.1.0` while the distribution was published as
+  `1.1.1`. Both now agree.
+
+> Versions published to PyPI up to and including `1.1.1` remain under GPLv3.
+> This change applies from `1.2.0` onward.
+
 ## [1.1.0] — 2026-05-19
 
 ### Added

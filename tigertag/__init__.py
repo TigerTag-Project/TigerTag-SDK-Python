@@ -45,7 +45,7 @@ from tigertag.tag import (
 from tigertag.db import TigerTagDB, sync_databases
 from tigertag.signature import SignatureResult
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 __all__ = [
     "TigerTag", "TigerTagDB", "SignatureResult", "sync_databases", "ApiDiff",
     "ID_TIGERTAG", "ID_TIGERTAG_PLUS", "ID_TIGERTAG_INIT",
