@@ -3,6 +3,19 @@
 All notable changes to this project will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.2.1] — 2026-07-10
+
+### Fixed
+- `1.2.0` required `setuptools>=77` at build time in order to use PEP 639 license
+  fields. setuptools 77 requires Python >= 3.9, so installing from source (`pip install .`,
+  `pip install git+...`, `--no-binary`) failed on Python 3.8, which this package still
+  supports. Installing the published wheel was unaffected.
+- The licence is now declared as `license = {text = "Apache-2.0"}` with the matching
+  trove classifier, which produces `License: Apache-2.0` in the metadata and builds on
+  every supported Python.
+
+No functional change. The licence is Apache-2.0, as in 1.2.0.
+
 ## [1.2.0] — 2026-07-10
 
 ### Changed

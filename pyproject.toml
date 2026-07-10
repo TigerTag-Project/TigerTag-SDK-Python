@@ -1,14 +1,13 @@
 [build-system]
-requires = ["setuptools>=77", "wheel"]
+requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "tigertag"
-version = "1.2.0"
+version = "1.2.1"
 description = "Offline Python SDK for TigerTag RFID material identification"
 readme = "README.md"
-license = "Apache-2.0"
-license-files = ["LICENSE"]
+license = {text = "Apache-2.0"}
 requires-python = ">=3.8"
 keywords = [
     "tigertag", "rfid", "nfc", "materials", "manufacturing",
@@ -18,6 +17,7 @@ classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Intended Audience :: Manufacturing",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
