@@ -38,7 +38,7 @@ full   = ["requests>=2.28", "cryptography>=41.0"]
 tigertag = "tigertag.cli:main"
 
 [project.urls]
-Homepage      = "https://tigertag.io"
+Homepage      = "https://tigersystem.io"
 Repository    = "https://github.com/TigerTag-Project/TigerTag-SDK-Python"
 Documentation = "https://github.com/TigerTag-Project/TigerTag-RFID-Guide"
 "Bug Tracker" = "https://github.com/TigerTag-Project/TigerTag-SDK-Python/issues"
