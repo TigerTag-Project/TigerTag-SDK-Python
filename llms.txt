@@ -300,7 +300,7 @@ Not covered by the ECDSA signature — setting it never invalidates a signed chi
                                 timestamp=None, db=None) -> TigerTag   # TigerTag+, ready for to_bytes()
     catalog_entry(product_id, catalog) -> dict   # title, brand, sku, barcode, img_src, RFID_Data…
     refresh_catalog()                 # force update; ETag / Last-Modified → unchanged file not re-downloaded
-    catalog_info() -> dict            # downloaded, count, fetched_at, checked_at, url, etag
+    catalog_info(cache_dir=None, *, data_dir=None, offline=None) -> dict  # local only; downloaded, count, fetched_at, checked_at, url, etag
 
     RFID_Data mapping (same chip layout for every type): data1=id_diameter, data2/data3=nozzle min/max,
     data4/data5=dry temp/time, data6/data7=bed min/max; null values → 0 (id_aspect2 null → 0x00 "none");

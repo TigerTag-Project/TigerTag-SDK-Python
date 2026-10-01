@@ -909,7 +909,12 @@ def refresh_catalog(
 _BUNDLED_COUNT: Dict[float, int] = {}
 
 
-def catalog_info(cache_dir: Optional[Path] = None) -> Dict[str, Any]:
+def catalog_info(
+    cache_dir: Optional[Path] = None,
+    *,
+    data_dir: Optional[Path] = None,
+    offline: Optional[bool] = None,
+) -> Dict[str, Any]:
     """
     Describe the local catalogue copies without downloading anything.
 
@@ -919,8 +924,15 @@ def catalog_info(cache_dir: Optional[Path] = None) -> Dict[str, Any]:
         ``fetched_at`` (when the copy in use was produced or downloaded), ``checked_at``,
         ``count``, ``size``, ``etag``, ``last_modified``, and ``bundled`` (the
         package's copy: ``path``, ``date``).
+
+    Args:
+        cache_dir: Data dir to inspect (default: the SDK data dir). ``data_dir`` is an
+            alias, as in the JS SDK's ``catalogInfo({ dataDir, cacheDir })``.
+        offline: Accepted for symmetry with :func:`load_catalog`; this function only
+            reads local files, so it never uses the network either way.
     """
-    cache = Path(cache_dir) if cache_dir else default_cache_dir()
+    del offline  # read-only: nothing to disable
+    cache = Path(data_dir or cache_dir) if (data_dir or cache_dir) else default_cache_dir()
     path = cache / CATALOG_FILENAME
     copies = _local_copies(cache)
     best = _newest(copies)

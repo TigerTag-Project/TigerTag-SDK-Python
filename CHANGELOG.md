@@ -3,6 +3,13 @@
 All notable changes to this project will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Changed
+- `catalog_info()` now takes the same options as the JS SDK's `catalogInfo()`: `data_dir`
+  (alias of `cache_dir`) and `offline` (accepted for symmetry with `load_catalog()`; the
+  function only reads local files, so it never uses the network).
+
 ## [1.3.0] — 2026-09-30
 
 ### Added
