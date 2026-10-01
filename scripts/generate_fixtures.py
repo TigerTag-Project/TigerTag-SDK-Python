@@ -49,7 +49,7 @@ def u32(v: int) -> bytes: return struct.pack(">I", v & 0xFFFFFFFF)
 def msg(s: str) -> bytes: return s.encode("utf-8").ljust(28, b"\x00")[:28]
 
 
-# ── Protocol constants (from TigerTag spec v2.1) ───────────────────────────────
+# ── Protocol constants (from TigerTag spec v2.2) ───────────────────────────────
 
 ID_TIGERTAG      = 0x5BF59264
 ID_TIGERTAG_PLUS = 0xBC0FCB97
@@ -361,14 +361,14 @@ def main() -> None:
             material = d["material"]["label"]
             brand    = TigerTagDB.label(db.brand(tag.id_brand))
             status   = str(sig)
-            ok       = "✓"
+            ok       = "OK"
         except Exception as exc:
             material = brand = "—"
             status = f"ERROR: {exc}"
-            ok = "✗"
+            ok = "FAIL"
 
-        print(f"  {ok}  {spec['filename']:<35}  {size:3}B  {material:<16} {brand:<14}  {status}")
-        if ok == "✗":
+        print(f"  {ok:<4}  {spec['filename']:<35}  {size:3}B  {material:<16} {brand:<14}  {status}")
+        if ok == "FAIL":
             sys.exit(1)
 
     print(f"\nDone. Load any fixture with:")

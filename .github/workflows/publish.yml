@@ -18,6 +18,9 @@ jobs:
       - name: Install build tools
         run: pip install build
 
+      - name: Bundle the day's reference data (tables + TigerTag+ catalogue)
+        run: python scripts/sync_bundled_data.py --dest tigertag/database
+
       - name: Build wheel and source distribution
         run: python -m build
 

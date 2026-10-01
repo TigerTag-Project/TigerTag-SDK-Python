@@ -88,11 +88,11 @@
   <!-- Stat pills -->
   <!-- Pill 1: chips -->
   <rect x="202" y="175" width="175" height="30" rx="15" fill="#f97316" fill-opacity="0.12" stroke="#f97316" stroke-width="1" stroke-opacity="0.4"/>
-  <text x="290" y="195" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="12" font-weight="600" fill="#fb923c">⬡ 2 000 000+ chips</text>
+  <text x="290" y="195" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="12" font-weight="600" fill="#fb923c">2 000 000+ chips</text>
 
   <!-- Pill 2: offline -->
   <rect x="388" y="175" width="130" height="30" rx="15" fill="#10b981" fill-opacity="0.12" stroke="#10b981" stroke-width="1" stroke-opacity="0.4"/>
-  <text x="453" y="195" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="12" font-weight="600" fill="#34d399">✓ 100% offline</text>
+  <text x="453" y="195" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="12" font-weight="600" fill="#34d399">100% offline</text>
 
   <!-- Pill 3: open source -->
   <rect x="530" y="175" width="120" height="30" rx="15" fill="#3b82f6" fill-opacity="0.12" stroke="#3b82f6" stroke-width="1" stroke-opacity="0.4"/>
@@ -100,7 +100,7 @@
 
   <!-- Pill 4: ECDSA -->
   <rect x="662" y="175" width="155" height="30" rx="15" fill="#8b5cf6" fill-opacity="0.12" stroke="#8b5cf6" stroke-width="1" stroke-opacity="0.4"/>
-  <text x="740" y="195" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="12" font-weight="600" fill="#a78bfa">⬡ ECDSA-P256 auth</text>
+  <text x="740" y="195" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="12" font-weight="600" fill="#a78bfa">ECDSA-P256 auth</text>
 
   <!-- Right side — brand logos text -->
   <text x="1140" y="96" text-anchor="end" font-family="system-ui,-apple-system,sans-serif" font-size="11" fill="#475569">Adopted by</text>
@@ -115,5 +115,5 @@
   <line x1="960" y1="60" x2="960" y2="220" stroke="#ffffff" stroke-opacity="0.06" stroke-width="1"/>
 
   <!-- Protocol version bottom right -->
-  <text x="1140" y="240" text-anchor="end" font-family="'Courier New',Courier,monospace" font-size="11" fill="#374151">Protocol v2.1 · NTAG213/215/216 · ISO 14443-3</text>
+  <text x="1140" y="240" text-anchor="end" font-family="'Courier New',Courier,monospace" font-size="11" fill="#374151">Protocol v2.2 · NTAG213/215/216 · ISO 14443-3</text>
 </svg>
