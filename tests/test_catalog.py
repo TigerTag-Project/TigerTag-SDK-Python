@@ -196,6 +196,16 @@ class TestRefreshAndInfo(_NetworkCase):
         self.assertEqual(info["etag"], '"abc123"')
         self.assertTrue(info["fetched_at"].endswith("+00:00"))
 
+    def test_info_accepts_data_dir_and_offline(self) -> None:
+        from tigertag import catalog_info
+        with mock.patch.object(cat_mod, "_download", return_value=(CATALOG_JSON, HEADERS)):
+            load_catalog(cache_dir=self.dir, url="https://example.invalid/cat.json")
+        with mock.patch.object(cat_mod, "_download", side_effect=AssertionError("network")):
+            for info in (catalog_info(data_dir=self.dir, offline=True),
+                         catalog_info(self.dir, offline=False)):
+                self.assertEqual(info, catalog_info(self.dir))
+                self.assertEqual(info["count"], 5)
+
     def test_refresh_sends_validators_and_handles_304(self) -> None:
         from tigertag import refresh_catalog, catalog_info
         url = "https://example.invalid/cat.json"
