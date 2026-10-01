@@ -41,9 +41,9 @@ SCOPE
   ┌─────────────────────────────────────────────────────────────────────┐
   │  TigerTag type    │  Read         │  Write        │  Cloud sync     │
   ├───────────────────┼───────────────┼───────────────┼─────────────────┤
-  │  TigerTag (Maker) │  ✅ full      │  ✅ create()  │  —              │
-  │  TigerTag Init    │  ✅ full      │  ✅ as_init() │  —              │
-  │  TigerTag+        │  ✅ full      │  ✅ create()  │  ✅ diff_api()  │
+  │  TigerTag (Maker) │  yes (full)   │  create()     │  —              │
+  │  TigerTag Init    │  yes (full)   │  as_init()    │  —              │
+  │  TigerTag+        │  yes (full)   │  create()     │  diff_api()     │
   └───────────────────┴───────────────┴───────────────┴─────────────────┘
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -113,7 +113,7 @@ BINARY LAYOUT — pages 0x04-0x27 (144 bytes)
   0x0B      +31     1B    Bed Temp Max            u8      °C
   0x0C      +32     4B    Twin Tag ID+Timestamp   u32 BE  sec since 2000-01-01 GMT
   0x0D      +36     3B    Color 2 (RGB)           bytes
-  0x0D      +39     1B    Reserved                u8      = 0x00
+  0x0D      +39     1B    Tag index / count       u8      high nibble = index, low = count (0=unknown)
   0x0E      +40     3B    Color 3 (RGB)           bytes
   0x0E      +43     1B    Reserved                u8      = 0x00
   0x0F      +44     2B    TD HueForge             u16 BE  value / 10
@@ -412,7 +412,7 @@ class TigerTagDB:
             return
 
         print("", file=sys.stderr)
-        print("❌  TigerTag database files not found.", file=sys.stderr)
+        print("Error: TigerTag database files not found.", file=sys.stderr)
         print(f"    Expected folder: {self._path.resolve()}", file=sys.stderr)
         print("", file=sys.stderr)
         print("    Missing files:", file=sys.stderr)
@@ -420,10 +420,10 @@ class TigerTagDB:
             print(f"      • {fn}", file=sys.stderr)
         print("", file=sys.stderr)
         if not _REQUESTS_AVAILABLE:
-            print("    ⚠️  'requests' is not installed — cannot auto-download.", file=sys.stderr)
+            print("    Warning: 'requests' is not installed — cannot auto-download.", file=sys.stderr)
             print("    Install it first:  pip install requests", file=sys.stderr)
             print("", file=sys.stderr)
-        print("    ➜  Run:  python parse_tigertag.py --sync-only", file=sys.stderr)
+        print("    Run:  python parse_tigertag.py --sync-only", file=sys.stderr)
         print("", file=sys.stderr)
         sys.exit(1)
 
@@ -541,20 +541,20 @@ class SignatureResult:
             print(f"Problem: {result}")
     """
 
-    VALID     = "valid"     # ✅ signature present and cryptographically correct
-    INVALID   = "invalid"   # ❌ signature present but verification failed
-    UNSIGNED  = "unsigned"  # ⬜ no signature (all zeros in pages 0x18-0x27)
-    NO_CRYPTO = "no_crypto" # ⚠️  'cryptography' package not installed
-    NO_KEY    = "no_key"    # ⚠️  public key missing from id_version.json
-    NO_UID    = "no_uid"    # ⚠️  UID unavailable (partial dump, not 180 bytes)
+    VALID     = "valid"     # signature present and cryptographically correct
+    INVALID   = "invalid"   # signature present but verification failed
+    UNSIGNED  = "unsigned"  # no signature (all zeros in pages 0x18-0x27)
+    NO_CRYPTO = "no_crypto" # 'cryptography' package not installed
+    NO_KEY    = "no_key"    # public key missing from id_version.json
+    NO_UID    = "no_uid"    # UID unavailable (partial dump, not 180 bytes)
 
     _ICONS = {
-        VALID:     "✅ VALID",
-        INVALID:   "❌ INVALID",
-        UNSIGNED:  "⬜ NOT SIGNED",
-        NO_CRYPTO: "⚠️  cryptography not installed — run: pip install cryptography",
-        NO_KEY:    "⚠️  public key not found in id_version.json",
-        NO_UID:    "⚠️  UID unavailable — provide a full 180-byte chip dump",
+        VALID:     "VALID",
+        INVALID:   "INVALID",
+        UNSIGNED:  "NOT SIGNED",
+        NO_CRYPTO: "NO CRYPTO — cryptography not installed, run: pip install cryptography",
+        NO_KEY:    "NO PUBLIC KEY — not found in id_version.json",
+        NO_UID:    "NO UID — provide a full 180-byte chip dump",
     }
 
     def __init__(self, status: str, detail: str = ""):
@@ -571,6 +571,478 @@ class SignatureResult:
 
     def to_dict(self) -> Dict:
         return {"status": self.status, "ok": self.ok, "detail": self.detail}
+
+
+def _https_context():
+    """
+    SSL context for the TigerTag+ API calls.
+
+    Uses certifi's CA bundle when it is installed (it comes with ``requests``,
+    i.e. ``pip install "tigertag[sync]"``): the python.org macOS installer ships
+    without system CA certificates until "Install Certificates.command" is run,
+    and every HTTPS call then fails with CERTIFICATE_VERIFY_FAILED. Without
+    certifi, Python's default certificate store is used.
+    """
+    import ssl
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
+
+
+def _check_available(measure: int, measure_available: int) -> None:
+    """
+    Refuse a remaining quantity above the initial quantity.
+
+    Checked whenever the SDK is about to produce chip bytes (``to_bytes``) or
+    change the quantities (``patch``). Reading a chip never raises: a chip that
+    already carries such values parses normally and :meth:`TigerTag.validate`
+    reports it. An initial quantity of 0 means "not set" and is not checked.
+
+    Raises:
+        ValueError: If ``measure > 0`` and ``measure_available > measure``.
+    """
+    if measure > 0 and measure_available > measure:
+        raise ValueError(
+            f"measure_available ({measure_available}) cannot exceed the initial "
+            f"measure ({measure})."
+        )
+
+
+def _encode_tag_info(tag_count: int, tag_index: int) -> int:
+    """
+    Pack a tag count and a tag index into the ``tag_info`` byte (page 0x0D, +39).
+
+    High nibble = tag index, low nibble = tag count, so the hex reads like
+    "index/count" (``0x12`` = tag 1 of 2). Both must fit in 0–15.
+
+    Raises:
+        ValueError: If either value is outside 0–15.
+    """
+    for name, value in (("tag_count", tag_count), ("tag_index", tag_index)):
+        if not isinstance(value, int) or not 0 <= value <= 15:
+            raise ValueError(
+                f"{name} must be an integer between 0 and 15 (got {value!r}). "
+                "0 = unknown; the value is stored in one nibble of page 0x0D byte 3."
+            )
+    return (tag_index << 4) | tag_count
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TIGERTAG+ CATALOGUE (same as tigertag/catalog.py in the package)
+# ══════════════════════════════════════════════════════════════════════════════
+# The official catalogue (id_catalog.json, ~12 MB) is downloaded on first use and
+# cached; it is never bundled. RFID_Data mapping, the same for every product type:
+#   data1 → id_diameter, data2/data3 → nozzle min/max, data4/data5 → dry temp/time,
+#   data6/data7 → bed min/max; null values → 0 (id_aspect2 null → 0x00 "(none)").
+# refresh_catalog() forces an update (ETag / Last-Modified skip unchanged files);
+# catalog_info() reports when the cached copy was fetched and how many products it has.
+
+import gzip
+import time
+import urllib.error
+import urllib.request
+
+# Shared with the package's tigertag/db.py: offline switch, data dir, bundled copy.
+# Here the bundled copy is the database/ folder next to this file.
+BUNDLED_DB_PATH = Path(__file__).parent / "database"
+
+
+def is_offline(flag: Optional[bool] = None) -> bool:
+    """True when ``flag`` is set or ``TIGERTAG_OFFLINE`` is 1 / true / yes / on."""
+    env = os.environ.get("TIGERTAG_OFFLINE", "").strip().lower() in ("1", "true", "yes", "on")
+    return bool(flag) or env
+
+
+def default_data_dir() -> Path:
+    """``TIGERTAG_DATA_DIR``, else ``TIGERTAG_CACHE_DIR``, else the user cache directory."""
+    for var in ("TIGERTAG_DATA_DIR", "TIGERTAG_CACHE_DIR"):
+        if os.environ.get(var):
+            return Path(os.environ[var])
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Caches" / "tigertag"
+    if os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+        return Path(base) / "tigertag" / "Cache"
+    base = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
+    return Path(base) / "tigertag"
+
+
+# ── Catalogue constants ────────────────────────────────────────────────────────
+
+DEFAULT_CATALOG_URL = (
+    "https://raw.githubusercontent.com/TigerTag-Project/TigerTag-RFID-Guide/"
+    "refs/heads/main/database/id_catalog.json"
+)
+CATALOG_FILENAME = "id_catalog.json"
+META_FILENAME    = "id_catalog.meta.json"   # url, fetched_at, checked_at, count, etag, last_modified
+DEFAULT_MAX_AGE  = 24 * 3600     # refresh the cached copy once a day
+DEFAULT_TIMEOUT  = 60            # seconds — the file is about 12 MB
+BUNDLED_CATALOG  = BUNDLED_DB_PATH / "id_catalog.json.gz"   # fallback, refreshed at every release
+ASPECT_NONE      = 0             # no second aspect: 0x00 "(none)", as in the spec examples
+
+Catalog = Dict[int, Dict[str, Any]]
+
+
+# ── Data directory, offline switch, bundled copy ───────────────────────────────
+
+def default_cache_dir() -> Path:
+    """Where the downloaded catalogue is kept — the shared data dir (see :func:`default_data_dir`)."""
+    return default_data_dir()
+
+
+def _gzip_mtime(path: Path) -> Optional[float]:
+    """Time recorded in a gzip header (when the bundled catalogue content last changed)."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(8)
+        if head[:2] != b"\x1f\x8b":
+            return None
+        return float(int.from_bytes(head[4:8], "little")) or path.stat().st_mtime
+    except OSError:
+        return None
+
+
+def read_catalog_file(path: Path) -> Catalog:
+    """Read ``id_catalog.json`` or ``id_catalog.json.gz`` into ``{product_id: entry}``."""
+    raw = Path(path).read_bytes()
+    if str(path).endswith(".gz"):
+        raw = gzip.decompress(raw)
+    return _index(raw)
+
+
+def _epoch(iso: Optional[str]) -> Optional[float]:
+    try:
+        return datetime.fromisoformat(iso).timestamp() if iso else None
+    except ValueError:
+        return None
+
+
+def _local_copies(cache: Path) -> Dict[str, Tuple[Path, float]]:
+    """Available local copies → ``{"downloaded"|"bundled": (path, content date)}``."""
+    found: Dict[str, Tuple[Path, float]] = {}
+    path = cache / CATALOG_FILENAME
+    if path.exists():
+        found["downloaded"] = (path, _epoch(_read_meta(cache).get("fetched_at")) or path.stat().st_mtime)
+    gz = BUNDLED_CATALOG
+    if gz.exists():
+        found["bundled"] = (gz, _gzip_mtime(gz) or 0.0)
+    return found
+
+
+def _newest(copies: Dict[str, Tuple[Path, float]]) -> Optional[str]:
+    if not copies:
+        return None
+    # On a tie the downloaded copy wins (it may carry an ETag for conditional requests)
+    return max(copies, key=lambda k: (copies[k][1], k == "downloaded"))
+
+
+# ── Download / cache ───────────────────────────────────────────────────────────
+
+def _download(
+    url: str,
+    timeout: int,
+    etag: Optional[str] = None,
+    last_modified: Optional[str] = None,
+) -> Optional[Tuple[bytes, Dict[str, Optional[str]]]]:
+    """
+    Fetch ``url`` over HTTPS (certifi CA bundle when installed).
+
+    Sends ``If-None-Match`` / ``If-Modified-Since`` when known. Returns ``None``
+    when the server answers 304 Not Modified, else ``(body, {"etag", "last_modified"})``.
+    """
+    headers = {"User-Agent": "tigertag-sdk-python"}
+    if etag:
+        headers["If-None-Match"] = etag
+    if last_modified:
+        headers["If-Modified-Since"] = last_modified
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout, context=_https_context()) as resp:
+            return resp.read(), {"etag": resp.headers.get("ETag"),
+                                 "last_modified": resp.headers.get("Last-Modified")}
+    except urllib.error.HTTPError as exc:
+        if exc.code == 304:
+            return None
+        raise
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _read_meta(cache: Path) -> Dict[str, Any]:
+    try:
+        return json.loads((cache / META_FILENAME).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_meta(cache: Path, meta: Dict[str, Any]) -> None:
+    try:
+        (cache / META_FILENAME).write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _index(raw: bytes) -> Catalog:
+    data = json.loads(raw.decode("utf-8"))
+    if not isinstance(data, list):
+        raise ValueError("Catalogue JSON must be a list of products.")
+    return {int(e["id"]): e for e in data if isinstance(e, dict) and isinstance(e.get("id"), int)}
+
+
+def load_catalog(
+    url: str = DEFAULT_CATALOG_URL,
+    cache_dir: Optional[Path] = None,
+    max_age: Optional[float] = DEFAULT_MAX_AGE,
+    force: bool = False,
+    timeout: int = DEFAULT_TIMEOUT,
+    offline: Optional[bool] = None,
+) -> Catalog:
+    """
+    Load the official TigerTag+ catalogue as ``{product_id: entry}``.
+
+    Uses the newest local copy — downloaded (in ``cache_dir``) or bundled with the
+    package — while it is younger than ``max_age``; otherwise downloads it (a
+    conditional request: an unchanged file is not downloaded again). Any download
+    failure falls back to the newest local copy.
+
+    Args:
+        url       : Catalogue URL (defaults to the TigerTag-RFID-Guide ``main`` branch).
+        cache_dir : Where the downloaded JSON is kept (default: the shared data dir).
+        max_age   : Seconds before a local copy is considered stale; ``None`` = never.
+        force     : Check for a new version even when the local copy is fresh.
+        timeout   : Download timeout in seconds.
+        offline   : No network access (also ``TIGERTAG_OFFLINE=1``): the newest local copy.
+
+    Returns:
+        Dict mapping each product ID to its catalogue entry (``title``, ``brand``,
+        ``sku``, ``barcode``, ``img_src``, ``RFID_Data``…).
+
+    Raises:
+        RuntimeError: No local copy at all and the download failed (or offline).
+    """
+    cache = Path(cache_dir) if cache_dir else default_cache_dir()
+    path = cache / CATALOG_FILENAME
+    copies = _local_copies(cache)
+    best = _newest(copies)
+
+    if is_offline(offline):
+        if best is None:
+            raise RuntimeError(
+                "Offline mode is on and no TigerTag+ catalogue is available locally "
+                f"(no {path}, no bundled copy). Turn offline mode off to download it."
+            )
+        return read_catalog_file(copies[best][0])
+
+    if best is not None and not force:
+        if best == "downloaded":
+            age = time.time() - path.stat().st_mtime          # restarted on every 304
+        else:
+            age = time.time() - copies["bundled"][1]
+        if max_age is None or age < max_age:
+            return read_catalog_file(copies[best][0])
+
+    meta = _read_meta(cache) if path.exists() else {}
+    use_validators = meta.get("url") == url and best == "downloaded"
+    try:
+        result = _download(url, timeout,
+                           etag=meta.get("etag") if use_validators else None,
+                           last_modified=meta.get("last_modified") if use_validators else None)
+        if result is None:                         # 304: the cached copy is current
+            catalog = _index(path.read_bytes())
+            meta.update(checked_at=_now_iso(), count=len(catalog))
+            _write_meta(cache, meta)
+            try:
+                os.utime(path)                     # restart the max_age clock
+            except OSError:
+                pass
+            return catalog
+        raw, headers = result
+        catalog = _index(raw)                      # validate before replacing the cache
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        if best is not None:
+            return read_catalog_file(copies[best][0])   # offline: newest local copy
+        raise RuntimeError(
+            f"Cannot download the TigerTag+ catalogue ({exc}) and no local copy exists "
+            f"in {cache}. Connect to the internet and retry, or download {url} and pass "
+            f"its folder as cache_dir."
+        ) from exc
+    try:
+        cache.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_bytes(raw)
+        tmp.replace(path)
+        now = _now_iso()
+        _write_meta(cache, {"url": url, "fetched_at": now, "checked_at": now,
+                            "count": len(catalog), "size": len(raw), **headers})
+    except OSError:
+        pass  # a read-only cache must not prevent using the catalogue
+    return catalog
+
+
+def refresh_catalog(
+    url: str = DEFAULT_CATALOG_URL,
+    cache_dir: Optional[Path] = None,
+    timeout: int = DEFAULT_TIMEOUT,
+    offline: Optional[bool] = None,
+) -> Catalog:
+    """
+    Force a catalogue update (same as ``load_catalog(force=True)``).
+
+    The cached copy's ``ETag`` / ``Last-Modified`` are sent, so an unchanged file
+    is not downloaded again (HTTP 304). On failure the newest local copy is returned.
+
+    Raises:
+        RuntimeError: Offline mode is on.
+    """
+    if is_offline(offline):
+        raise RuntimeError(
+            "Offline mode is on (offline=True or TIGERTAG_OFFLINE=1): the catalogue cannot "
+            "be refreshed. Turn offline mode off to update it."
+        )
+    return load_catalog(url=url, cache_dir=cache_dir, force=True, timeout=timeout)
+
+
+_BUNDLED_COUNT: Dict[float, int] = {}
+
+
+def catalog_info(cache_dir: Optional[Path] = None) -> Dict[str, Any]:
+    """
+    Describe the local catalogue copies without downloading anything.
+
+    Returns:
+        ``source`` ("downloaded" or "bundled": the copy :func:`load_catalog` uses
+        offline), ``downloaded`` (a downloaded copy exists), ``path``, ``url``,
+        ``fetched_at`` (when the copy in use was produced or downloaded), ``checked_at``,
+        ``count``, ``size``, ``etag``, ``last_modified``, and ``bundled`` (the
+        package's copy: ``path``, ``date``).
+    """
+    cache = Path(cache_dir) if cache_dir else default_cache_dir()
+    path = cache / CATALOG_FILENAME
+    copies = _local_copies(cache)
+    best = _newest(copies)
+    info: Dict[str, Any] = {"downloaded": path.exists(), "path": str(path), "source": best}
+    if "bundled" in copies:
+        gz, date = copies["bundled"]
+        info["bundled"] = {"path": str(gz), "date": datetime.fromtimestamp(date, tz=timezone.utc)
+                           .replace(microsecond=0).isoformat()}
+    if best == "downloaded":
+        meta = _read_meta(cache)
+        mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).replace(microsecond=0).isoformat()
+        info.update({
+            "url":           meta.get("url"),
+            "fetched_at":    meta.get("fetched_at") or mtime,
+            "checked_at":    meta.get("checked_at") or mtime,
+            "count":         meta.get("count"),
+            "size":          meta.get("size") or path.stat().st_size,
+            "etag":          meta.get("etag"),
+            "last_modified": meta.get("last_modified"),
+        })
+        if info["count"] is None:          # cache written by hand: count it once
+            try:
+                info["count"] = len(_index(path.read_bytes()))
+            except ValueError:
+                pass
+    elif best == "bundled":
+        gz, date = copies["bundled"]
+        if date not in _BUNDLED_COUNT:
+            try:
+                _BUNDLED_COUNT[date] = len(read_catalog_file(gz))
+            except (OSError, ValueError):
+                _BUNDLED_COUNT[date] = 0
+        info.update({
+            "url": None, "fetched_at": info["bundled"]["date"], "checked_at": None,
+            "count": _BUNDLED_COUNT[date], "size": gz.stat().st_size,
+            "etag": None, "last_modified": None,
+        })
+    return info
+
+
+# ── Entry → chip fields ────────────────────────────────────────────────────────
+
+def catalog_entry(product_id: int, catalog: Optional[Catalog] = None) -> Dict[str, Any]:
+    """
+    Return the catalogue entry for ``product_id`` (title, brand, sku, barcode,
+    img_src, RFID_Data…). Loads the catalogue when ``catalog`` is omitted.
+
+    Raises:
+        KeyError: The product ID is not in the catalogue.
+    """
+    catalog = load_catalog() if catalog is None else catalog
+    try:
+        return catalog[int(product_id)]
+    except KeyError:
+        raise KeyError(
+            f"TigerTag+ product ID {product_id} is not in the official catalogue "
+            f"({len(catalog)} products). Check the ID on https://tigertag.io or refresh "
+            f"the catalogue with load_catalog(force=True)."
+        ) from None
+
+
+def parse_hex_color(value: str) -> Tuple[int, int, int, int]:
+    """``"#RRGGBB"`` or ``"#RRGGBBAA"`` → ``(r, g, b, a)``; alpha defaults to 255."""
+    h = value.strip().lstrip("#")
+    if len(h) not in (6, 8):
+        raise ValueError(f"Not a #RRGGBB[AA] colour: {value!r}")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    a = int(h[6:8], 16) if len(h) == 8 else 255
+    return r, g, b, a
+
+
+def rfid_fields(entry: Dict[str, Any]) -> Dict[str, int]:
+    """
+    Map a catalogue entry to :meth:`TigerTag.create` keyword arguments
+    (``product_id`` included). See the module docstring for the data1–data7 mapping.
+
+    Raises:
+        ValueError: The entry has no ``RFID_Data``.
+    """
+    d = entry.get("RFID_Data")
+    if not isinstance(d, dict):
+        raise ValueError(
+            f"Catalogue entry {entry.get('id')} ({entry.get('title', '?')}) has no RFID_Data: "
+            "it cannot be written to a chip."
+        )
+
+    def n(key: str, default: int = 0) -> int:
+        v = d.get(key)
+        return int(v) if v is not None else default
+
+    fields: Dict[str, int] = {
+        "product_id":      int(entry["id"]),
+        "id_material":     n("id_material"),
+        "id_aspect_1":     n("id_aspect1"),
+        "id_aspect_2":     n("id_aspect2", ASPECT_NONE),
+        "id_type":         n("id_type"),
+        "id_diameter":     n("data1"),
+        "id_brand":        n("id_brand"),
+        "color1_r":        n("color_r"),
+        "color1_g":        n("color_g"),
+        "color1_b":        n("color_b"),
+        "color1_a":        n("color_a", 255),
+        "measure":         n("measure"),
+        "id_unit":         n("id_unit"),
+        "nozzle_temp_min": n("data2"),
+        "nozzle_temp_max": n("data3"),
+        "dry_temp":        n("data4"),
+        "dry_time":        n("data5"),
+        "bed_temp_min":    n("data6"),
+        "bed_temp_max":    n("data7"),
+    }
+    colors = ((entry.get("color_info") or {}).get("colors")) or []
+    for slot in (2, 3):
+        keys = (f"color_r{slot}", f"color_g{slot}", f"color_b{slot}")
+        if all(d.get(k) is not None for k in keys):
+            rgb = tuple(int(d[k]) for k in keys)
+        elif len(colors) >= slot:
+            rgb = parse_hex_color(colors[slot - 1])[:3]
+        else:
+            rgb = (0, 0, 0)
+        fields[f"color{slot}_r"], fields[f"color{slot}_g"], fields[f"color{slot}_b"] = rgb
+    return fields
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -651,6 +1123,9 @@ class TigerTag:
     # ── HueForge ──────────────────────────────────────────────────────────────
     td_raw : int           # u16 BE — actual TD = td_raw / 10  (0=undefined, 1-1000 valid)
 
+    # ── Tag index / count (page 0x0D byte 3) ─────────────────────────────────
+    tag_info : int = 0    # u8 — high nibble = this tag's index, low nibble = tags on the item (0=unknown)
+
     # ── Signature (optional, pages 0x18-0x27) ─────────────────────────────────
     signature_r : bytes = field(default_factory=lambda: bytes(32))
     signature_s : bytes = field(default_factory=lambda: bytes(32))
@@ -692,6 +1167,31 @@ class TigerTag:
     def td_value(self) -> float:
         """HueForge TD as float. 0.0=undefined, valid range 0.1–100.0."""
         return self.td_raw / 10.0
+
+    def _item_noun(self, db: Optional[TigerTagDB] = None) -> str:
+        """Lowercased ``id_type`` label ("filament", "resin"…), or "item" when unknown."""
+        entry = (db or self.db).type_(self.id_type)
+        label = (entry or {}).get("label") or ""
+        return label.strip().lower() or "item"
+
+    @property
+    def tag_count(self) -> int:
+        """
+        Number of TigerTags on the item (low nibble of ``tag_info``) — a filament
+        spool, a resin bottle… (what the item is comes from ``id_type``).
+
+        0 = unknown (every tag written before protocol v2.2), 1 = single tag,
+        2 = twin tag, up to 15.
+        """
+        return self.tag_info & 0x0F
+
+    @property
+    def tag_index(self) -> int:
+        """
+        Which of the item's tags this one is, counted from 1 (high nibble of
+        ``tag_info``). 0 = unknown.
+        """
+        return (self.tag_info >> 4) & 0x0F
 
     @property
     def manufacturing_date(self) -> datetime:
@@ -785,7 +1285,8 @@ class TigerTag:
         import urllib.request
 
         try:
-            with urllib.request.urlopen(self.api_url, timeout=timeout) as resp:
+            with urllib.request.urlopen(self.api_url, timeout=timeout,
+                                        context=_https_context()) as resp:
                 return _json.loads(resp.read().decode("utf-8"))
         except urllib.error.URLError as exc:
             raise RuntimeError(
@@ -930,6 +1431,10 @@ class TigerTag:
         Protected fields (id_tigertag, id_product, uid, signature_r, signature_s)
         are covered by the ECDSA signature and cannot be modified.
 
+        tag_count and tag_index are accepted as shortcuts for the tag_info
+        byte (either one alone keeps the other nibble). They are not covered by
+        the signature, so patching them never invalidates it.
+
         Args:
             **kwargs: Field names and their new values.
 
@@ -938,11 +1443,25 @@ class TigerTag:
             The original instance is unchanged.
 
         Raises:
-            ValueError: If any protected or unknown field is requested.
+            ValueError: If any protected or unknown field is requested, if
+                tag_count / tag_index is outside 0-15, or if the resulting
+                measure_available would exceed measure.
 
         Example:
             updated = tag.patch(nozzle_temp_min=200, dry_temp=55)
+            twin_2  = tag.patch(tag_count=2, tag_index=2)
         """
+        tag_count = kwargs.pop("tag_count", None)
+        tag_index = kwargs.pop("tag_index", None)
+        if tag_count is not None or tag_index is not None:
+            if "tag_info" in kwargs:
+                raise ValueError(
+                    "Pass either tag_info or tag_count/tag_index, not both."
+                )
+            kwargs["tag_info"] = _encode_tag_info(
+                self.tag_count if tag_count is None else tag_count,
+                self.tag_index if tag_index is None else tag_index,
+            )
         protected = set(kwargs.keys()) & _PROTECTED_FIELDS
         if protected:
             raise ValueError(
@@ -956,6 +1475,9 @@ class TigerTag:
                 f"Unknown field(s): {', '.join(sorted(unknown))}. "
                 f"Valid patchable fields: {', '.join(sorted(valid))}"
             )
+        if "measure" in kwargs or "measure_available" in kwargs:
+            _check_available(kwargs.get("measure", self.measure),
+                             kwargs.get("measure_available", self.measure_available))
         return _dc_replace(self, **kwargs)
 
     def patch_from_api(
@@ -1051,7 +1573,7 @@ class TigerTag:
     @classmethod
     def from_pages(cls, uid: bytes, payload: bytes, db: TigerTagDB = None) -> "TigerTag":
         """
-        Parse a TigerTag from NFC SDK native output.  ← PRIMARY METHOD
+        Parse a TigerTag from NFC SDK native output.  (PRIMARY METHOD)
 
         This is the recommended constructor for production use with any NFC SDK.
         The UID and payload are provided separately, exactly as NFC SDKs expose them.
@@ -1069,7 +1591,7 @@ class TigerTag:
 
         Example:
             tag = TigerTag.from_pages(uid, payload)
-            result = tag.verify()  # ✅ fully autonomous
+            result = tag.verify()  # fully autonomous
         """
         if len(payload) not in (MIN_DATA_LEN, FULL_DATA_LEN):
             raise ValueError(
@@ -1158,6 +1680,7 @@ class TigerTag:
             color3_g          = u8(41),
             color3_b          = u8(42),
             td_raw            = u16(44),
+            tag_info          = u8(39),
             custom_message    = msg,
             measure_available = u24(76),
             signature_r       = sig_r,
@@ -1210,6 +1733,9 @@ class TigerTag:
         timestamp:      Optional[int] = None,
         custom_message: str = "",
         td_raw: int = 0,
+        # Tag count / index
+        tag_count: int = 0,
+        tag_index: int = 0,
         db: Optional[TigerTagDB] = None,
     ) -> "TigerTag":
         """
@@ -1243,6 +1769,14 @@ class TigerTag:
             timestamp       : Seconds since 2000-01-01 UTC. Defaults to now.
             custom_message  : Free-text traceability field (max 28 bytes UTF-8).
             td_raw          : HueForge TD × 10 (0 = undefined).
+            tag_count       : Number of TigerTags on the item, 0–15
+                              (0 = unknown, 1 = single tag, 2 = twin tag).
+                              All tags of an item share the same count and
+                              the same ``timestamp``.
+            tag_index       : Which of those tags this one is, 1–count
+                              (0 = unknown). Stored with ``tag_count`` in
+                              ``tag_info`` (page 0x0D, +39); not covered by
+                              the ECDSA signature.
             db              : Optional pre-loaded TigerTagDB.
 
         Returns:
@@ -1301,10 +1835,68 @@ class TigerTag:
             timestamp         = timestamp,
             custom_message    = custom_message,
             td_raw            = td_raw,
+            tag_info          = _encode_tag_info(tag_count, tag_index),
             uid               = uid,
             _db               = db,
         )
         return tag
+
+    @classmethod
+    def from_catalog(
+        cls,
+        product_id: int,
+        *,
+        catalog: Optional[Dict[int, Dict[str, Any]]] = None,
+        uid: Optional[bytes] = None,
+        tag_count: int = 0,
+        tag_index: int = 0,
+        timestamp: Optional[int] = None,
+        db: Optional[TigerTagDB] = None,
+        offline: Optional[bool] = None,
+    ) -> "TigerTag":
+        """
+        Build a complete TigerTag+ from the official catalogue, ready for :meth:`to_bytes`.
+
+        Only the product ID is needed: material, aspects, type, diameter, brand,
+        colours, quantity and temperatures come from the catalogue entry's
+        ``RFID_Data`` (see the catalogue section of this file for the data1–data7 mapping).
+        ``id_tigertag`` is TigerTag+ and ``id_product`` is ``product_id``.
+
+        The catalogue metadata (title, brand, SKU, barcode, image) is not part of
+        the chip; read it with :func:`catalog_entry`.
+
+        Args:
+            product_id : TigerTag+ product ID.
+            catalog    : Catalogue from :func:`load_catalog`; when omitted, the newest of
+                         the bundled (database/id_catalog.json.gz next to this file)
+                         and downloaded copies, refreshed once a day.
+            uid        : 7-byte chip UID, if known.
+            tag_count  : Tags on the item, 0–15 (0 = unknown, 2 = twin tag).
+            tag_index  : Which tag this is, 1–count (0 = unknown).
+            timestamp  : Seconds since 2000-01-01 UTC. Defaults to *now*.
+            db         : Optional pre-loaded :class:`TigerTagDB`.
+            offline    : No network access (also ``TIGERTAG_OFFLINE=1``): the bundled or
+                         downloaded copy is used as is.
+
+        Raises:
+            KeyError     : ``product_id`` is not in the catalogue.
+            ValueError   : The entry carries no chip data.
+            RuntimeError : The catalogue cannot be downloaded and is not cached.
+
+        Example::
+
+            catalog = load_catalog()
+            tag = TigerTag.from_catalog(3527039449, catalog=catalog, tag_count=1, tag_index=1)
+            print(catalog_entry(3527039449, catalog)["title"])   # Rapid TPU 95A - Black
+            chip.write_pages(4, tag.to_bytes())
+        """
+        if catalog is None:
+            catalog = load_catalog(offline=offline)
+        fields = rfid_fields(catalog_entry(product_id, catalog))
+        return cls.create(
+            **fields, uid=uid, tag_count=tag_count, tag_index=tag_index,
+            timestamp=timestamp, db=db,
+        )
 
     @classmethod
     def as_init(cls, uid: Optional[bytes] = None) -> "TigerTag":
@@ -1349,6 +1941,7 @@ class TigerTag:
             timestamp         = ts,
             custom_message    = "",
             td_raw            = 0,
+            tag_info          = 0,
             uid               = uid,
         )
 
@@ -1375,7 +1968,12 @@ class TigerTag:
         """
         Serialize back to binary (pages 0x04 onward).
         Returns 80 bytes (user data) or 144 bytes (with signature).
+
+        Raises:
+            ValueError: If measure_available exceeds measure — the SDK never
+                produces chip bytes with more material left than it started with.
         """
+        _check_available(self.measure, self.measure_available)
         def p16(v): return struct.pack(">H", v & 0xFFFF)
         def p24(v): v &= 0xFFFFFF; return bytes([(v>>16)&0xFF,(v>>8)&0xFF,v&0xFF])
         def p32(v): return struct.pack(">I", v & 0xFFFFFFFF)
@@ -1398,7 +1996,7 @@ class TigerTag:
             + bytes([self.dry_temp, self.dry_time, self.bed_temp_min, self.bed_temp_max])
             + p32(self.timestamp)
             + bytes([self.color2_r, self.color2_g, self.color2_b])
-            + b"\x00"
+            + bytes([self.tag_info & 0xFF])
             + bytes([self.color3_r, self.color3_g, self.color3_b])
             + b"\x00"
             + p16(self.td_raw)
@@ -1423,10 +2021,16 @@ class TigerTag:
         Basic field-level sanity checks.
         Returns list of warning strings. Empty = no issues.
 
+        Tag index / count: tag_info == 0x00 (unknown) is valid, and so is a
+        known count with an unknown index (e.g. 0x02) or an index with an
+        unknown count. A warning is raised when the index exceeds a known count
+        (which also covers index > 1 on a single-tag item) or when tag_info
+        does not fit in one byte.
+
         Example:
             warnings = tag.validate()
             for w in warnings:
-                print(f"⚠  {w}")
+                print(f"Warning: {w}")
         """
         warnings = []
         if self.nozzle_temp_min > self.nozzle_temp_max > 0:
@@ -1437,6 +2041,15 @@ class TigerTag:
             warnings.append(f"TD HueForge out of range: {self.td_raw} (valid: 10–1000 or 0=undefined)")
         if self.measure > 0 and self.measure_available > self.measure:
             warnings.append(f"measure_available ({self.measure_available}) > initial measure ({self.measure})")
+        if not 0 <= self.tag_info <= 0xFF:
+            warnings.append(
+                f"tag_info out of range: {self.tag_info} (valid: 0–255, one byte)"
+            )
+        elif self.tag_count > 0 and self.tag_index > self.tag_count:
+            warnings.append(
+                f"Tag index ({self.tag_index}) > tag count ({self.tag_count})"
+                " (index must be 1–count, or 0=unknown)"
+            )
         if len(self.custom_message.encode("utf-8")) > 28:
             warnings.append("custom_message exceeds 28 bytes")
         return warnings
@@ -1462,7 +2075,7 @@ class TigerTag:
 
         Example:
             result = tag.verify()
-            print(result)        # ✅ VALID  /  ❌ INVALID  /  ⬜ NOT SIGNED
+            print(result)        # VALID  /  INVALID  /  NOT SIGNED
             print(result.ok)     # True / False
         """
         if not self.is_signed:
@@ -1546,6 +2159,7 @@ class TigerTag:
             "color_g3":          self.color3_g,
             "color_b3":          self.color3_b,
             "td_raw":            self.td_raw,
+            "tag_info":          self.tag_info,
             "message":           self.custom_message,
             "measure_available": self.measure_available,
             "uid":               self.uid_hex,
@@ -1570,7 +2184,7 @@ class TigerTag:
         return {
             "sdk":        "tigertag-sdk-python",
             "sdk_mode":   "offline",
-            "protocol":   "TigerTag Open Source v2.1",
+            "protocol":   "TigerTag Open Source v2.2",
             "uid":        self.uid_hex,
             "version": {
                 "id":    self.id_tigertag,
@@ -1618,6 +2232,8 @@ class TigerTag:
             "timestamp":           self.timestamp,
             "manufacturing_date":  self.manufacturing_date.isoformat(),
             "twin_tag_pairing_id": self.timestamp,
+            "tag_count":           self.tag_count or None,
+            "tag_index":           self.tag_index or None,
             "custom_message":      self.custom_message,
             "signed":              self.is_signed,
         }
@@ -1717,6 +2333,10 @@ class TigerTag:
 
         # Traceability
         parts.append(f"Manufactured: {self.manufacturing_date.strftime('%Y-%m-%d')}.")
+        if self.tag_count:
+            parts.append(
+                f"Tag {self.tag_index or '?'} of {self.tag_count} on this {self._item_noun(_db)}."
+            )
         if self.custom_message:
             parts.append(f"Custom message on chip: \"{self.custom_message}\".")
         if self.uid_hex:
@@ -1755,7 +2375,7 @@ class TigerTag:
         rec   = mat.get("recommended", {})
         stock = self.stock_percent
         ul    = TigerTagDB.label(_db.unit(self.id_unit))
-        sig   = str(sig_result) if sig_result else ("signed ✓" if self.is_signed else "not signed")
+        sig   = str(sig_result) if sig_result else ("signed" if self.is_signed else "not signed")
 
         def rec_note(kmin, kmax, suffix="°C"):
             return f"  (DB: {rec[kmin]}–{rec[kmax]}{suffix})" if rec.get(kmin) is not None else ""
@@ -1789,6 +2409,7 @@ class TigerTag:
             f"├─ Traceability ────────────────────────────────────────\n"
             f"│  Manufactured {self.manufacturing_date.strftime('%Y-%m-%d %H:%M UTC')}\n"
             f"│  Twin tag ID  {self.timestamp}\n"
+            f"│  Tag          {self.tag_index or '?'} of {self.tag_count or '?'}" + (" (unknown)\n" if self.tag_info == 0 else "\n") +
             f"│  Message      {self.custom_message!r}\n"
             f"├─ Signature ───────────────────────────────────────────\n"
             f"│  ECDSA        {sig}\n"
@@ -1836,7 +2457,7 @@ if __name__ == "__main__":
     # Sync-only mode
     if args.sync_only:
         if not _REQUESTS_AVAILABLE:
-            print("❌  'requests' is not installed. Run:  pip install requests", file=sys.stderr)
+            print("Error: 'requests' is not installed. Run:  pip install requests", file=sys.stderr)
             sys.exit(1)
         updated = sync_databases(db_path, verbose=True)
         if updated:
@@ -1859,7 +2480,7 @@ if __name__ == "__main__":
     warnings = tag.validate()
     if warnings:
         for w in warnings:
-            print(f"⚠  {w}")
+            print(f"Warning: {w}")
         print()
 
     # Raw mode (no DB)

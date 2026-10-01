@@ -22,7 +22,7 @@
 tigertag — Python SDK for TigerTag RFID material identification.
 
 Spec    : https://github.com/TigerTag-Project/TigerTag-RFID-Guide
-Protocol: TigerTag Open Source v2.1
+Protocol: TigerTag Open Source v2.2
 
 Quick start:
     from tigertag import TigerTag
@@ -42,12 +42,14 @@ from tigertag.tag import (
     ID_TIGERTAG, ID_TIGERTAG_PLUS, ID_TIGERTAG_INIT,
     MAKER_PRODUCT_ID, INIT_PRODUCT_ID,
 )
-from tigertag.db import TigerTagDB, sync_databases
+from tigertag.db import TigerTagDB, sync_databases, default_data_dir
 from tigertag.signature import SignatureResult
+from tigertag.catalog import load_catalog, refresh_catalog, catalog_info, catalog_entry
 
-__version__ = "1.2.1"
+__version__ = "1.3.0"
 __all__ = [
     "TigerTag", "TigerTagDB", "SignatureResult", "sync_databases", "ApiDiff",
+    "load_catalog", "refresh_catalog", "catalog_info", "catalog_entry", "default_data_dir",
     "ID_TIGERTAG", "ID_TIGERTAG_PLUS", "ID_TIGERTAG_INIT",
     "MAKER_PRODUCT_ID", "INIT_PRODUCT_ID",
 ]

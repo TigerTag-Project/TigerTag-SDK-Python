@@ -60,12 +60,12 @@ class SignatureResult:
     NO_UID    = "no_uid"     # UID unavailable (partial dump, not 180 bytes)
 
     _ICONS: Dict[str, str] = {
-        VALID:     "✅ VALID",
-        INVALID:   "❌ INVALID",
-        UNSIGNED:  "⬜ NOT SIGNED",
-        NO_CRYPTO: "⚠️  cryptography not installed — run: pip install cryptography",
-        NO_KEY:    "⚠️  public key not found in id_version.json",
-        NO_UID:    "⚠️  UID unavailable — provide a full 180-byte chip dump",
+        VALID:     "VALID",
+        INVALID:   "INVALID",
+        UNSIGNED:  "NOT SIGNED",
+        NO_CRYPTO: "NO CRYPTO — cryptography not installed, run: pip install cryptography",
+        NO_KEY:    "NO PUBLIC KEY — not found in id_version.json",
+        NO_UID:    "NO UID — provide a full 180-byte chip dump",
     }
 
     def __init__(self, status: str, detail: str = "") -> None:

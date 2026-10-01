@@ -12,7 +12,7 @@ body:
     attributes:
       label: SDK version
       description: Output of `tigertag --version` or `python -c "import tigertag; print(tigertag.__version__)"`
-      placeholder: "1.1.0"
+      placeholder: "1.3.0"
     validations:
       required: true
 

@@ -8,7 +8,11 @@ Run with:
 
 from __future__ import annotations
 
+import os as _os
+_os.environ["TIGERTAG_OFFLINE"] = "1"   # the suite never touches the network (tests that need it mock it)
+
 import struct
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -43,6 +47,7 @@ def _make_payload(
     color3_g:        int   = 0,
     color3_b:        int   = 255,
     td_raw:          int   = 0,
+    tag_info:       int   = 0x00,
     custom_message:  bytes = b"",
     measure_avail:   int   = 800,
     include_sig:     bool  = False,
@@ -69,7 +74,7 @@ def _make_payload(
         + bytes([dry_temp, dry_time, bed_min, bed_max])
         + p32(timestamp)
         + bytes([color2_r, color2_g, color2_b])
-        + b"\x00"
+        + bytes([tag_info])
         + bytes([color3_r, color3_g, color3_b])
         + b"\x00"
         + p16(td_raw)
@@ -201,6 +206,24 @@ class TestValidate(unittest.TestCase):
         warnings = tag.validate()
         self.assertTrue(any("measure_available" in w for w in warnings))
 
+    def test_measure_available_above_initial_is_refused_on_write(self) -> None:
+        """Reading such a chip works; producing bytes or patching into it raises."""
+        from tigertag import TigerTag
+        tag = TigerTag.from_dump(_make_payload(measure=500, measure_avail=600))
+        self.assertEqual(tag.measure_available, 600)          # read: permissive
+        with self.assertRaises(ValueError):
+            tag.to_bytes()                                     # write: refused
+        ok = TigerTag.from_dump(_make_payload(measure=1000, measure_avail=800))
+        with self.assertRaises(ValueError):
+            ok.patch(measure_available=1002)
+        with self.assertRaises(ValueError):
+            ok.patch(measure=700)                              # 800 left > 700
+        self.assertEqual(ok.patch(measure_available=1000).to_bytes()[76:79],
+                         (1000).to_bytes(3, "big"))            # equal is fine
+        zero = TigerTag.from_dump(_make_payload(measure=0, measure_avail=5))
+        self.assertEqual(len(zero.to_bytes()), 80)             # initial 0 = not set
+
+
     def test_td_out_of_range(self) -> None:
         from tigertag import TigerTag
         tag = TigerTag.from_dump(_make_payload(td_raw=5))
@@ -275,6 +298,26 @@ class TestToDict(unittest.TestCase):
 # ══════════════════════════════════════════════════════════════════════════════
 # SignatureResult
 # ══════════════════════════════════════════════════════════════════════════════
+
+def _has_emoji(text: str) -> bool:
+    """True when text holds a pictograph (box drawing U+2500-257F and → are allowed)."""
+    ranges = [(0x1F000, 0x1FAFF), (0x2600, 0x27BF), (0x2B00, 0x2BFF), (0x25A0, 0x25FF),
+              (0x2300, 0x23FF), (0xFE0F, 0xFE0F)]
+    return any(lo <= ord(c) <= hi for c in text for lo, hi in ranges)
+
+
+class TestNoEmoji(unittest.TestCase):
+
+    def test_text_outputs_have_no_emoji(self) -> None:
+        from tigertag import TigerTag, SignatureResult
+        for status in ("valid", "invalid", "unsigned", "no_crypto", "no_key", "no_uid"):
+            with self.subTest(status=status):
+                self.assertFalse(_has_emoji(str(SignatureResult(status))))
+        self.assertEqual(str(SignatureResult("valid")), "VALID")
+        tag = TigerTag.from_pages(bytes(7), _make_payload(tag_info=0x12, include_sig=True))
+        for text in (tag.pretty(), tag.describe(), tag.pretty(sig_result=tag.verify())):
+            self.assertFalse(_has_emoji(text), text)
+
 
 class TestSignatureResult(unittest.TestCase):
 
@@ -449,6 +492,201 @@ class TestECDSARoundTrip(unittest.TestCase):
         result = tag.verify(db)
         self.assertEqual(result.status, SignatureResult.VALID)
         self.assertTrue(result.ok)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Tag index / tag count (page 0x0D byte 3, protocol v2.2)
+# ══════════════════════════════════════════════════════════════════════════════
+
+_UID = bytes([0x04, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF])
+
+
+def _load_standalone():
+    """Import the root-level standalone parse_tigertag.py as its own module."""
+    import importlib.util
+    path = Path(__file__).resolve().parent.parent / "parse_tigertag.py"
+    spec = importlib.util.spec_from_file_location("parse_tigertag_standalone", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module   # dataclasses resolve annotations via sys.modules
+    spec.loader.exec_module(module)
+    return module
+
+
+def _ecdsa_sign(uid: bytes, id_tigertag: int, id_product: int):
+    """Sign SHA-256(uid + block4 + block5) with an ephemeral P-256 key.
+
+    Returns (sig_r, sig_s, public_key_pem). Raises ImportError without cryptography.
+    """
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
+
+    private_key = ec.generate_private_key(ec.SECP256R1())
+    pem = private_key.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode()
+    message = uid + id_tigertag.to_bytes(4, "big") + id_product.to_bytes(4, "big")
+    r, s = decode_dss_signature(private_key.sign(message, ec.ECDSA(hashes.SHA256())))
+    return r.to_bytes(32, "big"), s.to_bytes(32, "big"), pem
+
+
+class TestTagIndexCount(unittest.TestCase):
+
+    CASES = [
+        (0x00, 0, 0),   # unknown (every tag written before v2.2)
+        (0x11, 1, 1),   # single tag
+        (0x12, 2, 1),   # twin tag, tag 1 of 2
+        (0x22, 2, 2),   # twin tag, tag 2 of 2
+        (0x02, 2, 0),   # count known, index unknown
+    ]
+
+    def test_parse_nibbles(self) -> None:
+        from tigertag import TigerTag
+        for raw, count, index in self.CASES:
+            with self.subTest(tag_info=hex(raw)):
+                tag = TigerTag.from_pages(_UID, _make_payload(tag_info=raw))
+                self.assertEqual(tag.tag_info, raw)
+                self.assertEqual(tag.tag_count, count)
+                self.assertEqual(tag.tag_index, index)
+
+    def test_roundtrip_to_bytes(self) -> None:
+        from tigertag import TigerTag
+        for raw, _, _ in self.CASES:
+            with self.subTest(tag_info=hex(raw)):
+                payload = _make_payload(tag_info=raw)
+                tag = TigerTag.from_pages(_UID, payload)
+                out = tag.to_bytes()
+                self.assertEqual(out[39], raw)
+                self.assertEqual(out, payload)
+
+    def test_create_encodes_tag_info(self) -> None:
+        from tigertag import TigerTag
+        tag = TigerTag.create(id_material=38219, tag_count=2, tag_index=2)
+        self.assertEqual(tag.tag_info, 0x22)
+        self.assertEqual(tag.to_bytes()[39], 0x22)
+        self.assertEqual(TigerTag.create().tag_info, 0x00)
+        # High nibble = index, low nibble = count: tag 1 of 2 reads 0x12
+        first = TigerTag.create(tag_count=2, tag_index=1)
+        self.assertEqual(first.to_bytes()[39], 0x12)
+        self.assertEqual((first.tag_index, first.tag_count), (1, 2))
+        self.assertEqual(TigerTag.create(tag_count=3).to_bytes()[39], 0x03)
+
+    def test_create_rejects_out_of_range(self) -> None:
+        from tigertag import TigerTag
+        with self.assertRaises(ValueError):
+            TigerTag.create(tag_count=16)
+        with self.assertRaises(ValueError):
+            TigerTag.create(tag_count=2, tag_index=-1)
+
+    def test_init_tag_tag_info_zero(self) -> None:
+        from tigertag import TigerTag
+        tag = TigerTag.as_init(uid=_UID)
+        self.assertEqual(tag.tag_info, 0)
+        self.assertEqual(tag.to_bytes()[39], 0x00)
+
+    def test_validate(self) -> None:
+        from tigertag import TigerTag
+        for raw in (0x00, 0x11, 0x12, 0x22, 0x02, 0x30):
+            with self.subTest(tag_info=hex(raw)):
+                tag = TigerTag.from_pages(_UID, _make_payload(tag_info=raw))
+                self.assertEqual(tag.validate(), [])
+        for raw in (0x32, 0x21):   # index > count (incl. index > 1 on a single tag)
+            with self.subTest(tag_info=hex(raw)):
+                tag = TigerTag.from_pages(_UID, _make_payload(tag_info=raw))
+                warnings = tag.validate()
+                self.assertEqual(len(warnings), 1)
+                self.assertIn("Tag index", warnings[0])
+        tag = TigerTag.from_pages(_UID, _make_payload()).patch(tag_info=0x100)
+        self.assertTrue(any("tag_info" in w for w in tag.validate()))
+
+    def test_patch(self) -> None:
+        from tigertag import TigerTag
+        tag = TigerTag.from_pages(_UID, _make_payload())
+        twin = tag.patch(tag_count=2, tag_index=1)
+        self.assertEqual(twin.tag_info, 0x12)
+        self.assertEqual(tag.tag_info, 0x00)                 # original unchanged
+        self.assertEqual(twin.patch(tag_index=2).tag_info, 0x22)  # keeps count
+        self.assertEqual(twin.patch(tag_count=3).tag_info, 0x13)  # keeps index
+        self.assertEqual(tag.patch(tag_info=0x11).tag_count, 1)
+        with self.assertRaises(ValueError):
+            tag.patch(tag_count=16)
+        with self.assertRaises(ValueError):
+            tag.patch(tag_info=0x11, tag_count=1)
+
+    def test_signature_unaffected(self) -> None:
+        try:
+            sig_r, sig_s, pem = _ecdsa_sign(_UID, 0x01000001, 0xFFFFFFFF)
+        except ImportError:
+            self.skipTest("cryptography not installed")
+        from tigertag import TigerTag, TigerTagDB, SignatureResult
+
+        db = TigerTagDB(auto_sync=False)
+        db._versions = [{"id": 0x01000001, "label": "test", "public_key": pem}]
+
+        payload = _make_payload(tag_info=0x00) + sig_r + sig_s
+        tag = TigerTag.from_pages(_UID, payload)
+        self.assertEqual(tag.verify(db).status, SignatureResult.VALID)
+
+        twin = tag.patch(tag_count=2, tag_index=2)
+        reparsed = TigerTag.from_pages(_UID, twin.to_bytes(include_signature=True))
+        self.assertEqual(reparsed.tag_info, 0x22)
+        self.assertEqual(reparsed.verify(db).status, SignatureResult.VALID)
+
+    def test_outputs(self) -> None:
+        from tigertag import TigerTag
+        tag = TigerTag.from_pages(_UID, _make_payload(tag_info=0x12))
+        self.assertEqual(tag.to_raw_dict()["tag_info"], 0x12)
+        d = tag.to_dict()
+        self.assertEqual(d["tag_count"], 2)
+        self.assertEqual(d["tag_index"], 1)
+        self.assertIn("Tag          1 of 2\n", tag.pretty())
+
+        unknown = TigerTag.from_pages(_UID, _make_payload())
+        d = unknown.to_dict()
+        self.assertIsNone(d["tag_count"])
+        self.assertIsNone(d["tag_index"])
+        self.assertIn("Tag          ? of ? (unknown)", unknown.pretty())
+
+        partial = TigerTag.from_pages(_UID, _make_payload(tag_info=0x02))
+        self.assertIn("Tag          ? of 2\n", partial.pretty())
+
+    def test_describe_names_the_item_type(self) -> None:
+        from tigertag import TigerTag
+        fil = TigerTag.from_pages(_UID, _make_payload(tag_info=0x12))          # id_type 0x8E
+        self.assertIn("Tag 1 of 2 on this filament.", fil.describe())
+        resin = TigerTag.from_pages(_UID, _make_payload(tag_info=0x22, id_type=0xAD))
+        self.assertIn("Tag 2 of 2 on this resin.", resin.describe())
+        unknown = TigerTag.from_pages(_UID, _make_payload(tag_info=0x11, id_type=0x01))
+        self.assertIn("Tag 1 of 1 on this item.", unknown.describe())
+        self.assertNotIn("spool", unknown.describe())
+        self.assertNotIn(" on this ", TigerTag.from_pages(_UID, _make_payload()).describe())  # 0x00: no sentence
+        standalone = _load_standalone()
+        db = standalone.TigerTagDB(Path(__file__).resolve().parent.parent / "tigertag" / "database", auto_sync=False)
+        st = standalone.TigerTag.from_pages(_UID, _make_payload(tag_info=0x12))
+        self.assertIn("Tag 1 of 2 on this filament.", st.describe(db))
+        st = standalone.TigerTag.from_pages(_UID, _make_payload(tag_info=0x12, id_type=0x01))
+        self.assertIn("Tag 1 of 2 on this item.", st.describe(db))
+
+    def test_standalone_parity(self) -> None:
+        """The root parse_tigertag.py must behave like the package."""
+        standalone = _load_standalone()
+        for raw, count, index in self.CASES:
+            with self.subTest(tag_info=hex(raw)):
+                payload = _make_payload(tag_info=raw)
+                tag = standalone.TigerTag.from_pages(_UID, payload)
+                self.assertEqual((tag.tag_count, tag.tag_index), (count, index))
+                self.assertEqual(tag.to_bytes(), payload)
+                self.assertEqual(tag.to_raw_dict()["tag_info"], raw)
+        tag = standalone.TigerTag.create(tag_count=2, tag_index=2)
+        self.assertEqual(tag.to_bytes()[39], 0x22)
+        self.assertEqual(
+            standalone.TigerTag.from_pages(_UID, _make_payload()).patch(tag_count=2, tag_index=1).tag_info,
+            0x12,
+        )
+        bad = standalone.TigerTag.from_pages(_UID, _make_payload(tag_info=0x32))
+        self.assertEqual(len(bad.validate()), 1)
 
 
 if __name__ == "__main__":

@@ -48,7 +48,7 @@ print(tag.to_dict())         # full structured data
 # 180-byte full dump — UID is auto-extracted
 tag = TigerTag.from_file("fixtures/tigertag_full_dump.bin")
 print(tag.uid_hex)           # "04AABBCCDDEEFF"
-print(tag.verify())          # ⬜ NOT SIGNED (unsigned fixture)
+print(tag.verify())          # NOT SIGNED (unsigned fixture)
 
 # TigerTag+ — has a cloud product ID
 tag = TigerTag.from_file("fixtures/tigertag_plus_bambu.bin")

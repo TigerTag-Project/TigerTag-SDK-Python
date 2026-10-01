@@ -20,21 +20,8 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install SDK with sync dependencies
-        run: pip install -e ".[sync]"
-
-      - name: Sync databases from TigerTag API
-        run: |
-          python - <<'EOF'
-          from pathlib import Path
-          from tigertag.db import sync_databases
-
-          updated = sync_databases(Path("tigertag/database"), force=False, verbose=True)
-          if updated:
-              print(f"\n✓ Updated: {', '.join(updated)}")
-          else:
-              print("\n✓ All databases are up to date.")
-          EOF
+      - name: Refresh bundled reference data (7 tables, last_update.json, id_catalog.json.gz)
+        run: python scripts/sync_bundled_data.py --dest tigertag/database
 
       - name: Commit and push if databases changed
         run: |

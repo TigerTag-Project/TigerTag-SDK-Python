@@ -1,5 +1,5 @@
 # TigerTag Python SDK — Reference for AI Agents
-# Version: 1.1.0 | Protocol: TigerTag Open Source v2.1
+# Version: 1.3.0 | Protocol: TigerTag Open Source v2.2
 # Spec: https://github.com/TigerTag-Project/TigerTag-RFID-Guide
 # SDK:  https://github.com/TigerTag-Project/TigerTag-SDK-Python
 
@@ -167,6 +167,8 @@ Three constructors — pick based on your input source:
     tag.td_value          float   HueForge Transmission Distance (0.0 = undefined)
     tag.manufacturing_date datetime  UTC datetime
     tag.stock_percent     float?  Remaining material as % (None if initial=0)
+    tag.tag_index         int     Which of the item's tags this is, from 1 (tag_info >> 4): 0=unknown
+    tag.tag_count         int     Tags on the item (tag_info & 0x0F): 0=unknown, 1=single, 2=twin tag, up to 15
     tag.custom_message    str     Up to 28 UTF-8 bytes of free text on the chip
 
 
@@ -190,6 +192,7 @@ Three constructors — pick based on your input source:
     tag.measure           int   Initial quantity (unit = tag.id_unit)
     tag.measure_available int   Remaining quantity (updated by Tiger Scale)
     tag.timestamp         int   Seconds since 2000-01-01 UTC — also the twin tag pairing ID
+    tag.tag_info          int   u8 at +39 — high nibble = tag index, low nibble = tag count
 
 
 ## Known ID TigerTag version values (from spec section 2.1)
@@ -238,9 +241,34 @@ tag.to_dict()["aspect_2"]["color_count"] exposes the value for custom logic.
 tag.timestamp is BOTH:
   1. Manufacturing date — seconds elapsed since 2000-01-01 00:00 UTC
      → tag.manufacturing_date gives this as a Python datetime
-  2. Twin tag pairing ID — left and right chips on the same spool receive
-     the exact same timestamp, making it a unique spool pair identifier.
+  2. Twin tag pairing ID — every tag on the same item (e.g. both sides of a
+     filament spool) receives the exact same timestamp, making it a unique item identifier.
      → tag.to_dict()["twin_tag_pairing_id"] exposes this value
+
+
+## Tag index & tag count — protocol v2.2 (spec section 2.11)
+
+Page 0x0D byte 3 (+39) is one byte, tag.tag_info, split in two nibbles:
+  high nibble = tag index (which of the item's TigerTags this one is, from 1),
+  low nibble  = tag count (TigerTags on the item — a filament spool, a resin bottle…;
+  what the item is comes from id_type). The hex reads "index/count".
+  0 = unknown in both.
+
+    0x00 → unknown (every tag written before v2.2 — readers treat it as unknown)
+    0x11 → single tag (1/1)
+    0x12 / 0x22 → twin tag, tag 1 of 2 / tag 2 of 2
+    0x02 → two tags, index unknown
+
+All tags of an item share the same count and the same timestamp.
+tag.describe() names the item from id_type: "Tag 1 of 2 on this filament." ("on this item" when unknown).
+Not covered by the ECDSA signature — setting it never invalidates a signed chip.
+    → tag.tag_index / tag.tag_count (ints, 0 = unknown)
+    → tag.to_dict()["tag_count"] / ["tag_index"] (None when unknown)
+    → tag.to_raw_dict()["tag_info"] (raw byte)
+    → TigerTag.create(..., tag_count=2, tag_index=1)  → byte +39 = 0x12
+       tag.patch(tag_count=2, tag_index=2)            → byte +39 = 0x22
+       (ValueError when a value is outside 0–15)
+    → tag.validate() warns when tag_index > tag_count (count known)
 
 
 ## SignatureResult
@@ -248,7 +276,7 @@ tag.timestamp is BOTH:
     result = tag.verify()
     result.ok      bool   True only for VALID
     result.status  str    "valid" | "invalid" | "unsigned" | "no_crypto" | "no_key" | "no_uid"
-    str(result)    str    Human-readable: "✅ VALID", "❌ INVALID", "⬜ NOT SIGNED", etc.
+    str(result)    str    Human-readable: "VALID", "INVALID", "NOT SIGNED", etc.
     result.to_dict() dict  {"status": ..., "ok": ..., "detail": ...}
 
     Status meanings:
@@ -264,6 +292,22 @@ tag.timestamp is BOTH:
       → 15 bytes total. UID as raw binary, NOT hex string.
 
 
+## TigerTag+ from the official catalogue
+
+    from tigertag import TigerTag, load_catalog, refresh_catalog, catalog_info, catalog_entry
+    catalog = load_catalog()          # id_catalog.json (~12 MB, 14 000+ products), downloaded once, cached
+    tag = TigerTag.from_catalog(product_id, *, catalog=None, uid=None, tag_count=0, tag_index=0,
+                                timestamp=None, db=None) -> TigerTag   # TigerTag+, ready for to_bytes()
+    catalog_entry(product_id, catalog) -> dict   # title, brand, sku, barcode, img_src, RFID_Data…
+    refresh_catalog()                 # force update; ETag / Last-Modified → unchanged file not re-downloaded
+    catalog_info() -> dict            # downloaded, count, fetched_at, checked_at, url, etag
+
+    RFID_Data mapping (same chip layout for every type): data1=id_diameter, data2/data3=nozzle min/max,
+    data4/data5=dry temp/time, data6/data7=bed min/max; null values → 0 (id_aspect2 null → 0x00 "none");
+    colours 2/3 from color_r2.. / color_r3.. or color_info.colors[1..2].
+    Unknown id → KeyError. Offline with no cache → RuntimeError. Not bundled with the SDK.
+
+
 ## Write operations (CRUD)
 
     TigerTag.create(*, uid=None, id_material=0, id_brand=0, id_type=0,
@@ -275,10 +319,12 @@ tag.timestamp is BOTH:
                     bed_temp_min=0, bed_temp_max=0,
                     dry_temp=0, dry_time=0,
                     measure=0, id_unit=21, custom="",
-                    timestamp=None, product_id=0xFFFFFFFF) -> TigerTag
+                    timestamp=None, product_id=0xFFFFFFFF,
+                    tag_count=0, tag_index=0) -> TigerTag
         Build a new tag from scratch. product_id=0xFFFFFFFF → TigerTag (Maker).
         product_id=any other → TigerTag+ (id_tigertag set to ID_TIGERTAG_PLUS).
         timestamp defaults to now (seconds since 2000-01-01 UTC).
+        tag_count / tag_index (0–15, 0=unknown) are packed into tag_info (+39): (index << 4) | count.
 
     TigerTag.as_init(uid=None) -> TigerTag
         Create a blank TigerTag Init chip. id_tigertag=ID_TIGERTAG_INIT,
@@ -293,7 +339,10 @@ tag.timestamp is BOTH:
         All other fields (nozzle_temp_min, id_material, color1_r, etc.) are patchable.
         Safe to call after signing — signature remains valid as long as id_tigertag,
         id_product and uid are untouched.
+        tag_count / tag_index are accepted as shortcuts for the tag_info byte
+        (either one alone keeps the other nibble).
         Example: patched = tag.patch(nozzle_temp_min=200, dry_temp=55)
+                 twin_2  = tag.patch(tag_count=2, tag_index=2)
 
     tag.patch_from_api(api_data=None, db=None) -> (TigerTag, list[ApiDiff])
         Fetch cloud API data (if api_data not provided) and apply all differing fields
@@ -326,8 +375,20 @@ tag.timestamp is BOTH:
 
     from tigertag import TigerTagDB
 
-    db = TigerTagDB()                  # bundled database, offline, always works
-    db = TigerTagDB(auto_sync=True)    # check for updates on init (requires requests)
+    db = TigerTagDB()                  # bundled + downloaded data; checks once a day for updates
+    db = TigerTagDB(offline=True)      # zero network (also env TIGERTAG_OFFLINE=1)
+    db = TigerTagDB(auto_update=False) # no automatic check
+    db = TigerTagDB(data_dir=path)     # where downloads go (default: user cache dir, env TIGERTAG_DATA_DIR)
+    db = TigerTagDB(db_path)           # your own folder, used exclusively (no fallback, no network)
+    db.update(force=False, catalog=False) -> list[str]   # check now; files that changed
+    db.info() -> dict                  # per table: source (custom/downloaded/bundled), path, timestamp; last check
+    db.catalog() -> dict               # TigerTag+ catalogue with the same settings
+
+    Precedence per table: your folder (exclusive) > newest of downloaded copy and bundled copy
+    (by last_update.json timestamps). The 7 tables and id_catalog.json.gz ship in the package.
+    Automatic check: first TigerTagDB per process, at most once per day, one request to
+    api.tigertag.io/.../all/last_update (GitHub mirror fallback), 5 s timeout, never raises.
+    CLI: tigertag update [--force] [--catalog] [--data-dir PATH]; tigertag dump.bin --offline
 
     db.material(id)   -> dict?   {"id":..., "label":"PLA", "density":1.24, "recommended":{...}}
     db.brand(id)      -> dict?   {"id":..., "label":"Rosa3D"}
@@ -379,7 +440,7 @@ tag.timestamp is BOTH:
         "3C"         # bed_max:     60°C
         "2D94CC80"   # timestamp:   764726400 s since 2000-01-01 (= 2024-03-26 UTC)
         "000000"     # color2 RGB:  none
-        "00"
+        "11"         # tag_info:    tag 1 of 1 — single tag (v2.2)
         "000000"     # color3 RGB:  none
         "00"
         "00E6"       # td_raw:      230 → HueForge TD 23.0
@@ -484,6 +545,7 @@ Pattern 4 — check multi-color before rendering:
     +32     4B    timestamp               u32 BE, seconds since 2000-01-01 UTC
                                           also = twin tag pairing ID
     +36     3B    color2 RGB              bytes
+    +39     1B    tag_info                u8 — high nibble = tag index, low = tag count (0=unknown)
     +40     3B    color3 RGB              bytes
     +44     2B    td_raw                  u16 BE — actual TD = value/10 (0=undefined)
     +48     28B   custom_message          UTF-8, null-padded (emoji allowed)
