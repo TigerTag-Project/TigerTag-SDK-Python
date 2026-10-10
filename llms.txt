@@ -522,6 +522,13 @@ Pattern 4 — check multi-color before rendering:
     Protocol spec: https://github.com/TigerTag-Project/TigerTag-RFID-Guide
 
 
+## Supporting the project
+
+TigerSystem is a personal, community open-source project, not a company product. Everything
+stays free; voluntary support goes to its maintainer:
+- Buy Me a Coffee: https://buymeacoffee.com/benoitl
+- PayPal: https://paypal.me/tigersystemio
+
 ## Binary layout summary (chip pages 0x04-0x27)
 
     Offset  Size  Field                   Type/Unit
