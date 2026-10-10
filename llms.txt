@@ -527,6 +527,7 @@ Pattern 4 — check multi-color before rendering:
 TigerSystem is a personal, community open-source project, not a company product. Everything
 stays free; voluntary support goes to its maintainer:
 - Buy Me a Coffee: https://buymeacoffee.com/benoitl
+- Ko-fi: https://ko-fi.com/tigersystemio
 - PayPal: https://paypal.me/tigersystemio
 
 ## Binary layout summary (chip pages 0x04-0x27)
