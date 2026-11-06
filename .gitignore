@@ -31,3 +31,6 @@ htmlcov/
 .claude/
 CLAUDE.md
 claude.md
+
+# Built showcase site (site/build.py)
+_site/
