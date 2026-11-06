@@ -1091,8 +1091,8 @@ class TigerTag:
 
             from tigertag.catalog import load_catalog, catalog_entry
             catalog = load_catalog()
-            tag = TigerTag.from_catalog(3527039449, catalog=catalog, tag_count=1, tag_index=1)
-            print(catalog_entry(3527039449, catalog)["title"])   # Rapid TPU 95A - Black
+            tag = TigerTag.from_catalog(2673739332, catalog=catalog, tag_count=1, tag_index=1)
+            print(catalog_entry(2673739332, catalog)["title"])   # PLA Rainbow - Fire
             chip.write_pages(4, tag.to_bytes())
         """
         from tigertag.catalog import catalog_entry, load_catalog, rfid_fields

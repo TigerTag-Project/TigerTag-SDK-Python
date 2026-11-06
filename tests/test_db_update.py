@@ -188,10 +188,10 @@ class TestOffline(_Base):
         with mock.patch.object(cat_mod, "_download", dl), \
              mock.patch.dict(os.environ, {"TIGERTAG_OFFLINE": "1"}):
             catalog = cat_mod.load_catalog(cache_dir=self.data)
-            tag = TigerTag.from_catalog(3527039449, offline=True)
+            tag = TigerTag.from_catalog(2673739332, offline=True)
         dl.assert_not_called()
-        self.assertIn(3527039449, catalog)
-        self.assertEqual((tag.nozzle_temp_min, tag.nozzle_temp_max), (200, 250))
+        self.assertIn(2673739332, catalog)
+        self.assertEqual((tag.nozzle_temp_min, tag.nozzle_temp_max), (195, 235))
         self.assertEqual(cat_mod.catalog_info(self.data)["source"], "bundled")
 
 

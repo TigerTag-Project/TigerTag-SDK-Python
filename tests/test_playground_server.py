@@ -114,9 +114,9 @@ class TestPlaygroundServer(unittest.TestCase):
         self.assertIn("id_material.json", info["tables"])
 
     def test_catalog_product_offline(self):
-        code, out, _ = self.get("/api/catalog/3527039449")
+        code, out, _ = self.get("/api/catalog/2673739332")
         self.assertEqual(code, 200, out)
-        self.assertEqual(out["entry"]["title"], "Rapid TPU 95A - Black")
+        self.assertEqual(out["entry"]["title"], "PLA Rainbow - Fire")
         for k in ("rfid_data", "fields", "raw_dict", "payload", "pretty", "describe", "catalog"):
             self.assertIn(k, out)
         self.assertEqual(self.get("/api/catalog/123")[0], 404)

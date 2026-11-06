@@ -392,9 +392,9 @@ catalogue (`id_catalog.json` in TigerTag-RFID-Guide, 14 000+ products):
 from tigertag import TigerTag, load_catalog, refresh_catalog, catalog_info, catalog_entry
 
 catalog = load_catalog()                     # downloaded once (~12 MB), then cached
-tag = TigerTag.from_catalog(3527039449, catalog=catalog, tag_count=1, tag_index=1)
-entry = catalog_entry(3527039449, catalog)   # title, brand, sku, barcode, img_src…
-print(entry["title"], tag.nozzle_temp_min, tag.nozzle_temp_max)   # Rapid TPU 95A - Black 200 250
+tag = TigerTag.from_catalog(2673739332, catalog=catalog, tag_count=1, tag_index=1)
+entry = catalog_entry(2673739332, catalog)   # title, brand, sku, barcode, img_src…
+print(entry["title"], tag.nozzle_temp_min, tag.nozzle_temp_max)   # PLA Rainbow - Fire 195 235
 chip.write_pages(4, tag.to_bytes())
 
 refresh_catalog()                            # force an update (unchanged file → HTTP 304, no download)
