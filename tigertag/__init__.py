@@ -46,7 +46,7 @@ from tigertag.db import TigerTagDB, sync_databases, default_data_dir
 from tigertag.signature import SignatureResult
 from tigertag.catalog import load_catalog, refresh_catalog, catalog_info, catalog_entry
 
-__version__ = "1.3.0"
+__version__ = "1.4.0"
 __all__ = [
     "TigerTag", "TigerTagDB", "SignatureResult", "sync_databases", "ApiDiff",
     "load_catalog", "refresh_catalog", "catalog_info", "catalog_entry", "default_data_dir",
