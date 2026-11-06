@@ -5,7 +5,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-11-06
+
+### Added
+- **Showcase site** (`site/`), published on GitHub Pages at
+  https://tigertag-project.github.io/TigerTag-SDK-Python/ by `.github/workflows/pages.yml`,
+  in eleven languages, with a "Get started with Python" button at the top of the README.
+  Not part of the package.
+
 ### Changed
+- The catalogue example in the README, the docstrings and the playground is now product
+  `2673739332`, Rosa3D PLA Rainbow - Fire 1000 g: `3527039449` (Elegoo Rapid TPU 95A - Black)
+  left the catalogue. The tests that read the bundled copy use it too.
+- The copyright and trademark holder is named TigerSystem (formerly TigerTag Corp) in the
+  licence, the source headers and the README.
+- CI tests Python 3.8 on ubuntu-22.04, since ubuntu-latest no longer ships it.
 - `catalog_info()` now takes the same options as the JS SDK's `catalogInfo()`: `data_dir`
   (alias of `cache_dir`) and `offline` (accepted for symmetry with `load_catalog()`; the
   function only reads local files, so it never uses the network).
