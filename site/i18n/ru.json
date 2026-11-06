@@ -7,7 +7,7 @@
   "meta_description": "Установите TigerTag Python SDK через pip, чтобы без сети читать, проверять, создавать и изменять NFC-чипы TigerTag на катушках филамента и флаконах смолы.",
   "og_title": "TigerTag Python SDK",
   "og_description": "Чтение, проверка и запись NFC-чипов TigerTag на Python. pip install tigertag.",
-  "og_alt": "TigerTag Python SDK: pip install tigertag",
+  "og_alt": "Метка TigerTag Refill — NFC-чип для катушки-рефилла",
   "nav_start": "Начало",
   "nav_code": "Подписи",
   "nav_features": "Возможности",

@@ -7,7 +7,7 @@
   "meta_description": "Mit pip installiert, liest, prüft, erstellt und ändert das TigerTag Python SDK offline die TigerTag-NFC-Chips auf Filamentspulen und Harzflaschen.",
   "og_title": "TigerTag Python SDK",
   "og_description": "TigerTag-NFC-Chips mit Python lesen, prüfen und schreiben. pip install tigertag.",
-  "og_alt": "TigerTag Python SDK: pip install tigertag",
+  "og_alt": "Ein TigerTag-Refill-Tag, der NFC-Chip für eine Nachfüllspule",
   "nav_start": "Loslegen",
   "nav_code": "Signaturen",
   "nav_features": "Funktionen",

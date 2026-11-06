@@ -7,7 +7,7 @@
   "meta_description": "Installeer de TigerTag Python SDK met pip om TigerTag-NFC-chips op filamentspoelen en harsflessen offline te lezen, te controleren, aan te maken en te wijzigen.",
   "og_title": "TigerTag Python SDK",
   "og_description": "Lees, controleer en schrijf TigerTag-NFC-chips met Python. pip install tigertag.",
-  "og_alt": "TigerTag Python SDK: pip install tigertag",
+  "og_alt": "Een TigerTag Refill-label, de NFC-chip voor een navulspoel",
   "nav_start": "Aan de slag",
   "nav_code": "Handtekeningen",
   "nav_features": "Functies",
