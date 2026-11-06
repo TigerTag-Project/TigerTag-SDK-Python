@@ -96,7 +96,7 @@
   "join_text": "pip install tigertag, daarna TigerTag.from_pages(uid, payload).",
   "join_btn": "tigertag op PyPI",
   "foot_licences": "TigerTag Python SDK: Apache-licentie 2.0 · TigerTag-specificatie: CC-BY-4.0",
-  "foot_trademark": "TigerTag is een handelsmerk van TigerTag Corp. Merkenbeleid",
+  "foot_trademark": "TigerTag is een handelsmerk van TigerSystem. Merkenbeleid",
   "foot_changelog": "Wijzigingslogboek",
   "foot_source": "Broncode van deze site"
 }
