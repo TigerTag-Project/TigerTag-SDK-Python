@@ -7,7 +7,7 @@
   "meta_description": "Instala el SDK Python de TigerTag con pip para leer, verificar, crear y modificar chips NFC TigerTag de bobinas de filamento y botellas de resina, sin conexión.",
   "og_title": "SDK Python de TigerTag",
   "og_description": "Lee, verifica y escribe chips NFC TigerTag desde Python. pip install tigertag.",
-  "og_alt": "SDK Python de TigerTag: pip install tigertag",
+  "og_alt": "Una etiqueta TigerTag Refill, el chip NFC que va en una recarga de filamento",
   "nav_start": "Empezar",
   "nav_code": "Firmas",
   "nav_features": "Funciones",

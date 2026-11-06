@@ -21,7 +21,6 @@ The `site/` folder is not part of the Python package: setuptools only packages `
 | `i18n/<lang>.json` | One file per language: `fr`, `de`, `es`, `it`, `zh` (Simplified Chinese), `pt` (Brazil), `pt-pt` (Portugal), `pl`, `ru`, `nl` — the languages of the other TigerTag sites. |
 | [`site.css`](site.css), [`site.js`](site.js) | The look of the TigerTag protocol site (dark by default, light on request), the theme and language buttons, and the copy buttons. Each page loads them with `?v=` and a hash of the file's content. |
 | [`assets/`](assets/) | The TigerTag head logos from the brand kit, unmodified: white on the dark theme, black (contouring) on the light one. The other pictures come from the repository's `assets/`. |
-| [`og.jpg`](og.jpg) | The picture shown when the site is shared (1200 × 630). |
 
 ## Facts come from the repository
 

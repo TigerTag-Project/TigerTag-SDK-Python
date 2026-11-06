@@ -51,6 +51,10 @@ PYPI_URL = "https://pypi.org/project/tigertag/"
 # The eleven languages of the TigerTag sites, in the same order. `pt` (Brazil)
 # and `pt-pt` (Portugal) are separate dictionaries on purpose.
 LANGS = ["en", "fr", "de", "es", "it", "zh", "pt", "pt-pt", "pl", "ru", "nl"]
+
+# The share picture: tigersystem.io draws this page's card in each language,
+# with the same renderer as its own pages, so the site keeps no picture of its own.
+SHARE_CARD = "https://tigersystem.io/{lang}/sdk-python/opengraph-image"
 HTML_LANG = {"zh": "zh-Hans", "pt": "pt-BR", "pt-pt": "pt-PT"}
 OG_LOCALE = {"en": "en_US", "fr": "fr_FR", "de": "de_DE", "es": "es_ES", "it": "it_IT",
              "zh": "zh_CN", "pt": "pt_BR", "pt-pt": "pt_PT", "pl": "pl_PL", "ru": "ru_RU", "nl": "nl_NL"}
@@ -233,6 +237,7 @@ def render(template, lang, words, dicts, site_url, facts):
 
     special = {
         "@lang": lang,
+        "@ogimage": SHARE_CARD.format(lang=lang),
         "@htmllang": hl,
         "@oglocale": OG_LOCALE[lang],
         "@oglocalealt": "\n".join(f'<meta property="og:locale:alternate" content="{OG_LOCALE[l]}">' for l in LANGS if l != lang),
@@ -292,9 +297,6 @@ def build(out, site_url):
     # white on the dark theme and black (contouring) on the light one.
     for extra in sorted((HERE / "assets").glob("*")):
         shutil.copy2(extra, out / "assets" / extra.name)
-    og = HERE / "og.jpg"
-    if og.exists():
-        shutil.copy2(og, out / "assets" / "og.jpg")
     # The SDK's machine-readable reference, at the site root too.
     shutil.copy2(REPO / "llms.txt", out / "llms.txt")
 

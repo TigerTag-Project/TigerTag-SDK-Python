@@ -7,7 +7,7 @@
   "meta_description": "使用 pip 安装 TigerTag Python SDK，离线读取、验证、创建和修改耗材线盘与树脂瓶上的 TigerTag NFC 芯片。",
   "og_title": "TigerTag Python SDK",
   "og_description": "用 Python 读取、验证和写入 TigerTag NFC 芯片。pip install tigertag。",
-  "og_alt": "TigerTag Python SDK：pip install tigertag",
+  "og_alt": "TigerTag Refill 标签：装在补充装耗材上的 NFC 芯片",
   "nav_start": "快速上手",
   "nav_code": "签名",
   "nav_features": "功能",
