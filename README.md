@@ -11,6 +11,36 @@
 
 **Offline Python SDK for TigerTag RFID material identification.**
 
+<p align="center">
+  <a href="https://tigertag-project.github.io/TigerTag-SDK-Python/">
+    <img src="assets/site-button.svg" alt="Get started with the TigerTag Python SDK" width="420">
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://tigertag-project.github.io/TigerTag-SDK-Python/" hreflang="en">English</a>
+  &nbsp;&middot;&nbsp;
+  <a href="https://tigertag-project.github.io/TigerTag-SDK-Python/fr/" hreflang="fr">Français</a>
+  &nbsp;&middot;&nbsp;
+  <a href="https://tigertag-project.github.io/TigerTag-SDK-Python/de/" hreflang="de">Deutsch</a>
+  &nbsp;&middot;&nbsp;
+  <a href="https://tigertag-project.github.io/TigerTag-SDK-Python/es/" hreflang="es">Español</a>
+  &nbsp;&middot;&nbsp;
+  <a href="https://tigertag-project.github.io/TigerTag-SDK-Python/it/" hreflang="it">Italiano</a>
+  &nbsp;&middot;&nbsp;
+  <a href="https://tigertag-project.github.io/TigerTag-SDK-Python/zh/" hreflang="zh-Hans">中文</a>
+  &nbsp;&middot;&nbsp;
+  <a href="https://tigertag-project.github.io/TigerTag-SDK-Python/pt/" hreflang="pt-BR">Português (BR)</a>
+  &nbsp;&middot;&nbsp;
+  <a href="https://tigertag-project.github.io/TigerTag-SDK-Python/pt-pt/" hreflang="pt-PT">Português (PT)</a>
+  &nbsp;&middot;&nbsp;
+  <a href="https://tigertag-project.github.io/TigerTag-SDK-Python/pl/" hreflang="pl">Polski</a>
+  &nbsp;&middot;&nbsp;
+  <a href="https://tigertag-project.github.io/TigerTag-SDK-Python/ru/" hreflang="ru">Русский</a>
+  &nbsp;&middot;&nbsp;
+  <a href="https://tigertag-project.github.io/TigerTag-SDK-Python/nl/" hreflang="nl">Nederlands</a>
+</p>
+
 > TigerTag is the **world's most widely deployed open-source RFID protocol** for
 > manufacturing material identification — with **over 2 million chips deployed worldwide**.
 > Adopted by major brands including **eSun, Rosa3D, Sunlu, R3D, Landu** and many more.

@@ -27,3 +27,22 @@ jobs:
 
       - name: Run tests
         run: python -m unittest discover tests/ -v
+
+  site:
+    name: Showcase site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      # The same checks pages.yml runs before a deploy (site/README.md).
+      - name: Check the translations and sources
+        run: python site/build.py --check
+
+      - name: Build and check the site for search and answer engines
+        run: python site/build.py --out _site && python site/seo_check.py _site

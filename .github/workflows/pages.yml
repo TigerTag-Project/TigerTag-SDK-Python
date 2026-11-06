@@ -1,0 +1,80 @@
+name: Publish the SDK site
+
+# Builds site/ (one static page per language, see site/build.py) and publishes it
+# on GitHub Pages: https://tigertag-project.github.io/TigerTag-SDK-Python/
+#
+# Exactly one workflow deploys this site, and this is it. The same checks run on
+# every pull request in test.yml (job "site").
+# Prerequisite, once: Settings > Pages > Source = "GitHub Actions".
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      # The page reads its code samples from the README, its version from
+      # pyproject.toml and the release date from CHANGELOG.md.
+      - 'README.md'
+      - 'CHANGELOG.md'
+      - 'pyproject.toml'
+      - 'llms.txt'
+      - 'assets/chip_layout.svg'
+      - 'assets/favicon.svg'
+      - 'assets/apple-touch-icon.png'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the page's dateModified comes from git log
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      # Every language must have every key, and the README samples must be found.
+      - name: Check the translations and sources
+        run: python site/build.py --check
+
+      - name: Build the site
+        run: python site/build.py --out _site
+
+      # No deploy with a broken hreflang set, a missing title or invalid JSON-LD.
+      - name: Check the site for search and answer engines
+        run: python site/seo_check.py _site
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+      # The published result, not this workflow's green tick: every language answers.
+      - name: The published site answers in every language
+        run: |
+          set -euo pipefail
+          base="${{ steps.deploy.outputs.page_url }}"
+          for lang in "" fr/ de/ es/ it/ zh/ pt/ pt-pt/ pl/ ru/ nl/; do
+            for i in 1 2 3 4 5 6; do
+              code=$(curl -s -o /dev/null -w '%{http_code}' "${base}${lang}") && [ "$code" = 200 ] && break
+              sleep 10
+            done
+            echo "${base}${lang} -> ${code}"
+            [ "$code" = 200 ]
+          done
